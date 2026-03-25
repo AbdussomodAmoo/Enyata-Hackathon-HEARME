@@ -1,6 +1,2 @@
 libgl1
-cmake
-libssl-dev
-libsm6
-libxrender1
-libxext6
+libglib2.0-dev
