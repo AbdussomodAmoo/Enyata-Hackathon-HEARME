@@ -1,7 +1,15 @@
 streamlit
-mediapipe
+mediapipe==0.10.9
 opencv-python-headless==4.10.0.84
 numpy
 pandas
 requests
 scikit-learn
+joblib 
+transformers
+torch
+sentencepiece
+gTTS
+SpeechRecognition
+pydub
+groq
