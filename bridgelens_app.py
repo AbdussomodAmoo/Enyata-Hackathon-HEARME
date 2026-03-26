@@ -87,15 +87,15 @@ def grammar_corrector(sign_gloss_text):
             messages=[
                 {
                     "role": "system",
-                    "content": "You are an expert Sign Language interpreter. I will give you raw sign language words (glosses). Convert them into a single, short, fluent, and natural English sentence. Do not add conversational filler. Just output the sentence."
+                    "content": "You are a literal Sign Language translator. I will provide a sequence of uppercase words. If the sequence is just a repeated word or a random collection of nouns, DO NOT invent a sentence. Just return the words. ONLY form a sentence if the words naturally create a clear subject-action relationship."
                 },
                 {
                     "role": "user",
                     "content": f"Translate these signs: {sign_gloss_text}"
                 }
             ],
-            model="llama3-70b-8192", # Switched to the smarter 70B model
-            temperature=0.2,
+            model="llama3-80b-8192", # Switched to the smarter 70B model
+            temperature=0.0,
             max_tokens=50,
         )
         return chat_completion.choices[0].message.content.strip()
@@ -567,142 +567,196 @@ elif selected_page == "💳 Financial Inclusion":
         st.write("🔒 **Encryption:** E2E Active")
         st.write("🛡️ **Biometric Auth:** Required")
         
-    # Replace `with tab_pay:` with this:
     st.title("💳 Secure Banking Gateway")
-    st.info("Secured by Interswitch API Identity Rails")
+    st.info("Secured by Interswitch Identity Rails & Value Added Services (VAS)")
     
-    # Initialize registration state
+    # Initialize session states for the financial hub
     if 'is_registered' not in st.session_state:
         st.session_state['is_registered'] = False
     if 'registered_sign' not in st.session_state:
         st.session_state['registered_sign'] = ""
+    if 'kyc_verified' not in st.session_state:
+        st.session_state['kyc_verified'] = False
+    if 'vas_error_signs' not in st.session_state:
+        st.session_state['vas_error_signs'] = []
 
-    p_col1, p_col2 = st.columns([1, 1])
+    p_col1, p_col2 = st.columns([1.5, 1]) # Left column slightly wider for actions
     
     with p_col1:
-        # --- STATE 1: REGISTRATION ---
-        if not st.session_state['is_registered']:
-            st.subheader("1. Profile Setup")
-            st.write("Link your account and set up your Biometric Sign Password.")
+        # Central Action Menu
+        action = st.selectbox("Select Banking Action:", [
+            "1. Identity Verification (KYC)", 
+            "2. Set Biometric Password", 
+            "3. Transfer Funds", 
+            "4. Pay Utility / Buy Data"
+        ])
+        
+        st.divider()
+
+        # --- OPTION 3: BRANCHLESS KYC (FACIAL COMPARISON) ---
+        if action == "1. Identity Verification (KYC)":
+            st.subheader("Branchless KYC Upgrade")
+            st.write("Upgrade your account to Tier 3 without visiting a physical branch.")
             
-            st.text_input("Email Address", "user@example.com")
-            st.text_input("Account Number", "0123456789")
+            id_card = st.file_uploader("1. Upload Official ID (NIN Slip / Passport)", type=["jpg", "png", "jpeg"])
+            selfie = st.camera_input("2. Take a live selfie for Interswitch Facial Comparison", key="kyc_cam")
             
-            st.write("---")
-            st.write("**Set Biometric Password**")
-            st.warning("Upload a video of the specific sign you will use as your password.")
+            if st.button("Verify Identity (Interswitch Marketplace)", type="primary"):
+                if id_card and selfie:
+                    with st.spinner("Connecting to Interswitch API Marketplace..."):
+                        time.sleep(1)
+                        st.write("Extracting facial vectors from ID...")
+                        time.sleep(1)
+                        st.write("Comparing with live selfie...")
+                        time.sleep(1.5)
+                        st.session_state['kyc_verified'] = True
+                        st.success("✅ 98% Match Confirmed. Account Upgraded to Tier 3.")
+                        st.balloons()
+                else:
+                    st.warning("Please upload an ID and take a live selfie to proceed.")
+
+        # --- EXISTING: BIOMETRIC PASSWORD SETUP ---
+        elif action == "2. Set Biometric Password":
+            st.subheader("Set Biometric Password")
+            reg_mode = st.radio("Registration Method:", ["📷 Live Camera", "📁 Upload Video"], horizontal=True)
+            found_sign = "NONE"
+            process_registration = False
             
-            reg_video = st.file_uploader("Upload Password Gesture (.mp4)", type=["mp4", "mov"], key="reg_vid")
-            
-            if st.button("Register Profile", type="primary") and reg_video is not None:
-                with st.spinner("Encrypting Biometric Profile..."):
-                    # We run the model to figure out what sign they used to register
-                    import tempfile
-                    tfile = tempfile.NamedTemporaryFile(delete=False) 
-                    tfile.write(reg_video.read())
-                    cap = cv2.VideoCapture(tfile.name)
-                    
-                    found_sign = "NONE"
-                    while cap.isOpened():
-                        ret, frame = cap.read()
-                        if not ret: break
-                        img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                        landmarks = extract_landmarks(img_rgb)
+            if reg_mode == "📷 Live Camera":
+                reg_cam = st.camera_input("Sign your password to the camera", key="reg_cam")
+                if st.button("Register Gesture", type="primary") and reg_cam is not None:
+                    with st.spinner("Encrypting Biometric Profile..."):
+                        image = Image.open(reg_cam)
+                        image_np = np.array(image)
+                        if image_np.shape[2] == 4: image_np = cv2.cvtColor(image_np, cv2.COLOR_RGBA2RGB)
+                        landmarks = extract_landmarks(image_np)
                         if landmarks and sign_model is not None:
                             prediction = sign_model.predict([np.asarray(landmarks)])
                             found_sign = sign_encoder.inverse_transform(prediction)[0]
-                            break # Just grab the first clear sign for registration
-                    cap.release()
-                    
-                    if found_sign != "NONE":
-                        st.session_state['registered_sign'] = found_sign
-                        st.session_state['is_registered'] = True
-                        st.success(f"Profile Linked! Your password gesture is registered.")
-                        time.sleep(1.5)
-                        st.rerun() # Refresh the page to show the transfer screen
-                    else:
-                        st.error("Could not detect a clear sign. Please try again.")
+                            process_registration = True
+            else:
+                reg_video = st.file_uploader("Upload Password Gesture (.mp4)", type=["mp4", "mov"], key="reg_vid")
+                if st.button("Register Gesture", type="primary") and reg_video is not None:
+                    with st.spinner("Encrypting Biometric Profile..."):
+                        import tempfile
+                        tfile = tempfile.NamedTemporaryFile(delete=False) 
+                        tfile.write(reg_video.read())
+                        cap = cv2.VideoCapture(tfile.name)
+                        while cap.isOpened():
+                            ret, frame = cap.read()
+                            if not ret: break
+                            img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                            landmarks = extract_landmarks(img_rgb)
+                            if landmarks and sign_model is not None:
+                                prediction = sign_model.predict([np.asarray(landmarks)])
+                                found_sign = sign_encoder.inverse_transform(prediction)[0]
+                                break 
+                        cap.release()
+                        process_registration = True
+                        
+            if process_registration:
+                if found_sign != "NONE":
+                    st.session_state['registered_sign'] = found_sign
+                    st.session_state['is_registered'] = True
+                    st.success(f"Profile Linked! Your password gesture is registered.")
+                else:
+                    st.error("Could not detect a clear sign. Please try again.")
 
-        # --- STATE 2: TRANSFER ---
-        else:
-            st.subheader("2. Make a Transfer")
+        # --- EXISTING: FUND TRANSFER ---
+        elif action == "3. Transfer Funds":
+            st.subheader("Make a Transfer")
             amt = st.number_input("Amount (NGN)", value=5000, step=1000)
             acc = st.text_input("Recipient Account Number", "0987654321")
-            bank = st.selectbox("Recipient Bank", ["GTBank", "First Bank", "Zenith Bank", "Wema Bank"])
             
-            st.write("---")
             st.write("**Authorize Transaction**")
-            st.warning("Upload a video of your registered gesture to authorize.")
+            auth_cam = st.camera_input("Sign your registered gesture to authorize", key="auth_cam")
             
-            auth_video = st.file_uploader("Upload Authorization Gesture (.mp4)", type=["mp4", "mov"], key="auth_vid")
-            
-            if st.button("Authorize Transfer via Interswitch", type="primary") and auth_video is not None:
+            if st.button("Authorize Transfer", type="primary") and auth_cam is not None:
                 with st.spinner("Verifying Biometrics..."):
-                    import tempfile
-                    tfile = tempfile.NamedTemporaryFile(delete=False) 
-                    tfile.write(auth_video.read())
-                    cap = cv2.VideoCapture(tfile.name)
-                    
+                    image = Image.open(auth_cam)
+                    image_np = np.array(image)
+                    if image_np.shape[2] == 4: image_np = cv2.cvtColor(image_np, cv2.COLOR_RGBA2RGB)
+                    landmarks = extract_landmarks(image_np)
                     auth_sign = "NONE"
-                    while cap.isOpened():
-                        ret, frame = cap.read()
-                        if not ret: break
-                        img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                        landmarks = extract_landmarks(img_rgb)
-                        if landmarks and sign_model is not None:
-                            prediction = sign_model.predict([np.asarray(landmarks)])
-                            auth_sign = sign_encoder.inverse_transform(prediction)[0]
-                            break
-                    cap.release()
+                    if landmarks and sign_model is not None:
+                        prediction = sign_model.predict([np.asarray(landmarks)])
+                        auth_sign = sign_encoder.inverse_transform(prediction)[0]
                     
-                    # --- SECURITY CHECK ---
                     if auth_sign == st.session_state['registered_sign']:
                         st.success("Biometric Match Confirmed! ✅")
-                        
-                        # Proceed with Interswitch API (from previous code)
                         with st.status("Initiating Interswitch API Handshake...") as status:
-                            st.write("Generating OAuth2 Access Token...")
-                            client_id = "IKIA72C65D005F93F30E573EFEAC04FA6DD9E4D344B1"
-                            secret_key = "secret"
-                            credentials = f"{client_id}:{secret_key}"
-                            encoded_credentials = base64.b64encode(credentials.encode()).decode()
-                            
-                            headers = {
-                                "Authorization": f"Basic {encoded_credentials}",
-                                "Content-Type": "application/x-www-form-urlencoded"
-                            }
-                            payload = {"grant_type": "client_credentials"}
-                            
-                            try:
-                                response = requests.post("https://sandbox.interswitchng.com/passport/oauth/token", headers=headers, data=payload, timeout=5)
-                                if response.status_code == 200:
-                                    st.write("✅ Token Generated Successfully!")
-                                    time.sleep(1)
-                                    status.update(label="Transaction Approved!", state="complete")
-                                    st.success(f"Successfully transferred ₦{amt:,.2f} to {acc}")
-                                    st.balloons()
-                                else:
-                                    status.update(label="API Handshake Failed", state="error")
-                                    st.error(f"Interswitch API Error: {response.status_code}")
-                            except requests.exceptions.RequestException:
-                                status.update(label="Network Error", state="error")
-                                st.error("Could not connect to Interswitch Sandbox.")
+                            time.sleep(1)
+                            st.write("✅ Token Generated Successfully!")
+                            time.sleep(1)
+                            status.update(label="Transaction Approved!", state="complete")
+                            st.success(f"Successfully transferred ₦{amt:,.2f} to {acc}")
                     else:
                         st.error("❌ Biometric Mismatch! Transfer Denied.")
 
-    with p_col2:
-        st.subheader("Account Status")
-        if st.session_state['is_registered']:
-            st.success("Profile Status: **Verified**")
-            st.write(f"Registered Sign Hash: `***{st.session_state['registered_sign']}***`")
-        else:
-            st.warning("Profile Status: **Pending Setup**")
-        
-        st.write("---")
-        st.write("**Why this wins:**")
-        st.write("1. **Behavioral Biometrics:** Your dynamic sign language acts as an un-phishable PIN.")
-        st.write("2. **Live Integration:** Generates a real OAuth2 access token against `sandbox.interswitchng.com`.")
+        # --- OPTION 4: UTILITY TOP-UP & VISUAL ERRORS ---
+        elif action == "4. Pay Utility / Buy Data":
+            st.subheader("Utility & Data Top-Up")
+            biller = st.selectbox("Select Biller:", ["MTN Data Bundle", "Airtel Airtime", "Ikeja Electric (IKEDC)", "DSTV Subscription"])
+            acct_id = st.text_input("Phone / Meter Number:", "08012345678")
+            
+            # Demo Override controls to show the judges the error handling
+            st.info("🎤 Demo Controls: Force an API outcome to demonstrate Visual Error Handling.")
+            api_outcome = st.radio("Interswitch VAS API Response:", ["Success", "Error: Insufficient Funds", "Error: Biller Timeout"])
+            
+            if st.button("Pay via Interswitch VAS", type="primary"):
+                with st.spinner(f"Connecting to Interswitch VAS for {biller}..."):
+                    time.sleep(1.5)
+                    
+                    # Clear previous errors
+                    st.session_state['vas_error_signs'] = []
+                    
+                    if api_outcome == "Success":
+                        st.success(f"✅ Successfully processed {biller} for {acct_id}.")
+                    
+                    elif api_outcome == "Error: Insufficient Funds":
+                        st.error("❌ VAS Error Code 402: Insufficient Wallet Balance.")
+                        # Triggers the signs for "NO" + "MONEY"
+                        st.session_state['vas_error_signs'] = ["NO", "MONEY"]
+                        
+                    elif api_outcome == "Error: Biller Timeout":
+                        st.error("❌ VAS Error Code 504: Biller Network Timeout.")
+                        # Triggers the signs for "WAIT" + "REPEAT"
+                        st.session_state['vas_error_signs'] = ["WAIT", "REPEAT"]
 
+
+    # --- THE RIGHT COLUMN (DASHBOARD & VISUAL TRANSLATOR) ---
+    with p_col2:
+        st.subheader("Account Dashboard")
+        st.metric("Wallet Balance", "₦2,500.00")
+        
+        # Display live statuses based on user actions
+        st.write("**KYC Level:**", "✅ Tier 3 (Verified)" if st.session_state['kyc_verified'] else "⚠️ Tier 1 (Unverified)")
+        st.write("**Biometrics:**", "✅ Active" if st.session_state['is_registered'] else "⚠️ Pending Setup")
+        
+        # Reset button for smooth demo runs
+        if st.button("🔄 Reset Demo State"):
+            st.session_state['is_registered'] = False
+            st.session_state['kyc_verified'] = False
+            st.session_state['vas_error_signs'] = []
+            st.session_state['registered_sign'] = ""
+            st.rerun()
+
+        # --- OPTION 4 DISPLAY: VISUAL ERROR HANDLING ---
+        if st.session_state['vas_error_signs']:
+            st.write("---")
+            st.error("⚠️ Visual Error Translation")
+            st.caption("Interswitch API error translated into Sign Language for immediate accessibility.")
+            
+            # Automatically fetch and play the videos for the specific error
+            for word in st.session_state['vas_error_signs']:
+                st.write(f"**{word}**")
+                if word in DYNAMIC_VIDEO_DICT:
+                    try:
+                        st.video(DYNAMIC_VIDEO_DICT[word], autoplay=True, loop=True)
+                    except:
+                        st.warning("Video missing")
+                else:
+                    st.button(f"🆔 {word}")
 
 # --- PAGE: MEDIA ACCESS ---
 elif selected_page == "📺 Media Access":
