@@ -16,6 +16,9 @@ import requests
 import re
 from youtube_transcript_api import YouTubeTranscriptApi
 from urllib.parse import urlparse, parse_qs
+from streamlit_webrtc import webrtc_streamer, VideoTransformerBase, RTCConfiguration
+import av
+
 
 mp_drawing = mp.solutions.drawing_utils
 mp_holistic = mp.solutions.holistic
@@ -120,32 +123,28 @@ Glosses to translate: {sign_gloss_text}"""
         st.toast(f"LLM Error: {e}", icon="⚠️")
         return sign_gloss_text
 
-def translate_local_to_gloss(spoken_text, api_key):
-    """Converts spoken text (English, Yoruba, Igbo, Hausa) into English Sign Language Glosses."""
+def translate_local_to_gloss(spoken_text, target_lang, api_key):
+    """Translates Yoruba/Igbo/Hausa to English, then to Sign Glosses."""
     if not api_key:
-        # Simple fallback if no API key is provided
         return [w.upper() for w in spoken_text.split()] 
         
     try:
+        from groq import Groq
         groq_client = Groq(api_key=api_key)
-        prompt = f"""You are a Sign Language interpreter. 
-Convert the following spoken sentence into a core English Sign Language Gloss sequence.
-Extract ONLY the core keywords (subjects, verbs, important nouns/adjectives).
-Output them as a space-separated string of UPPERCASE ENGLISH WORDS.
-
-Spoken text: "{spoken_text}"
+        prompt = f"""You are a master linguistic translator.
+The user spoke the following sentence in {target_lang}: "{spoken_text}"
+Translate this into English, and then convert it into a core English Sign Language Gloss sequence.
+Extract ONLY the core keywords.
+Output them as a space-separated string of UPPERCASE ENGLISH WORDS. No other text.
+Example: If Yoruba is 'Bawo ni', output 'HOW ARE YOU' or 'HELLO'.
 Gloss sequence:"""
 
         response = groq_client.chat.completions.create(
             model="llama3-8b-8192",
-            messages=[
-                {"role": "system", "content": "You output ONLY uppercase English gloss words separated by spaces. No punctuation."},
-                {"role": "user", "content": prompt}
-            ],
+            messages=[{"role": "user", "content": prompt}],
             temperature=0.0,
             max_tokens=50
         )
-        # Returns a list of glosses: ['WHERE', 'HOSPITAL', 'GO']
         return response.choices[0].message.content.strip().split() 
         
     except Exception:
@@ -223,12 +222,23 @@ CONTEXT_MAP = {
 }
 
 def extract_target_glosses(text):
-    """Used by the Ambient Ear to pull signable words out of background noise."""
+    """Pulls target sign words from text, smartly handling plurals and verb tenses."""
+    import re
     clean_text = re.sub(r'[^\w\s]', '', text.lower())
     words = clean_text.split()
-    glosses = [w.upper() for w in words if w in ALL_TARGET_WORDS]
+    glosses = []
+    
+    for w in words:
+        for target in ALL_TARGET_WORDS:
+            # Check exact match OR common suffixes (plurals/past tense/continuous)
+            if w == target or w == target + "s" or w == target + "es" or w == target + "d" or w == target + "ed" or w == target + "ing":
+                glosses.append(target.upper())
+                break # Found a match, move to the next word in the sentence
+                
+    # Remove duplicates but preserve the spoken order
     seen = set()
     return [x for x in glosses if not (x in seen or seen.add(x))]
+
 def render_universal_listener():
     st.header("🔊 Universal Listener")
     st.write("Converts nearby speech to Sign Glosses.")
@@ -376,7 +386,7 @@ def predict_with_context(landmarks, active_context):
                 best_word = word_label
                 
     # 4. Confidence Threshold: Only return if the AI is at least 40% sure
-    if highest_prob > 0.40:
+    if highest_prob > 0.20:
         return best_word
     else:
         return "NONE"
@@ -412,7 +422,27 @@ def get_youtube_transcript(url):
 
     except Exception as e:
         return f"Error: Ensure the video has available transcripts. Details: {e}"
+
+# --- WEBRTC LIVE SKELETON TRANSFORMER ---
+class SkeletonTransformer(VideoTransformerBase):
+    def __init__(self):
+        self.holistic = mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5)
         
+    def recv(self, frame):
+        img = frame.to_ndarray(format="bgr24")
+        
+        # Process MediaPipe
+        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        results = self.holistic.process(img_rgb)
+        
+        # Draw Skeleton Live!
+        mp_drawing.draw_landmarks(img, results.pose_landmarks, mp_holistic.POSE_CONNECTIONS)
+        mp_drawing.draw_landmarks(img, results.left_hand_landmarks, mp_holistic.HAND_CONNECTIONS)
+        mp_drawing.draw_landmarks(img, results.right_hand_landmarks, mp_holistic.HAND_CONNECTIONS)
+        
+        return av.VideoFrame.from_ndarray(img, format="bgr24")
+
+
 # ==========================================
 # --- 2. PAGE ROUTING LOGIC ---
 # ==========================================
@@ -525,8 +555,16 @@ if selected_page == "🌍 Daily Interaction":
     # ==========================================
     with d_col2:
         st.subheader("📷 3. Speak to the World")
-        st.caption(f"Sign to the camera. AI is mathematically restricted to **{st.session_state['active_context']}** terms.")
+        # THE LIVE WEBRTC DEMO!
+        st.write("**Live AI Tracking Demo**")
+        webrtc_streamer(
+            key="live_sign", 
+            video_processor_factory=SkeletonTransformer,
+            rtc_configuration=RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]})
+        )
         
+        st.divider()
+        st.write("**Execute Translation**")        
         # We use file uploader for the hackathon demo to ensure stable execution on stage
         daily_vid = st.file_uploader("Upload Sign Sequence (.mp4)", type=["mp4", "mov"], key="daily_vid")
         
@@ -956,7 +994,7 @@ elif selected_page == "📺 Media Access":
         st.subheader("1. Media Source")
         media_source = st.radio("Select Input Method:", ["🎥 YouTube Link", "📁 Upload Video"], horizontal=True)
         
-        # Display the media purely for visuals
+        # Display the media
         if media_source == "🎥 YouTube Link":
             yt_url = st.text_input("Paste YouTube Link:", "https://www.youtube.com/watch?v=BRvhK4ChS6E")
             if yt_url: st.video(yt_url.strip())
@@ -964,54 +1002,58 @@ elif selected_page == "📺 Media Access":
             course_vid = st.file_uploader("Upload Course Video", type=["mp4", "mov"], key="course_vid")
             if course_vid: st.video(course_vid)
 
-        st.divider()
-        
-        # --- YOUR BULLETPROOF AUDIO LISTENER ---
+    with m_col2:
+        # --- THE UNIVERSAL LISTENER MOVED HERE ---
         st.subheader("🔊 Universal Listener")
-        st.caption("Play the video out loud. Converts nearby speech to Sign Glosses.")
+        target_lang = st.session_state.get('target_language', 'English')
+        st.caption(f"Listening to video in: **{target_lang}**")
         
         audio_bytes = st.audio_input("Record audio from the video")
         
         if audio_bytes is not None:
             audio_hash = hash(audio_bytes.getvalue())
-            # Prevents Streamlit from infinitely reloading the same audio
-            if st.session_state['last_audio_hash'] != audio_hash:
+            if st.session_state.get('last_audio_hash') != audio_hash:
                 st.session_state['last_audio_hash'] = audio_hash
                 st.info("Transcribing audio...")
                 
                 import speech_recognition as sr
                 r = sr.Recognizer()
-                with sr.AudioFile(audio_bytes) as source:
-                    audio_data = r.record(source)
-                    try:
-                        text = r.recognize_google(audio_data)
-                        st.success(f"🗣️ Heard: {text}")
+                try:
+                    with sr.AudioFile(audio_bytes) as source:
+                        audio_data = r.record(source)
+                        lang_code = st.session_state.get('sr_lang_code', 'en-NG')
+                        text = r.recognize_google(audio_data, language=lang_code)
                         
-                        # Instantly process it for the right column!
+                        st.success(f"🗣️ Heard ({target_lang}): {text}")
                         st.session_state['media_transcription'] = text
-                        # NOTE: Using extract_target_glosses based on our previous setup. 
-                        # Change to convert_to_nsl_gloss if that's your specific function name!
-                        st.session_state['media_glosses'] = extract_target_glosses(text) 
+                        
+                        # Convert to Gloss
+                        groq_key = os.environ.get("GROQ_API_KEY", "")
+                        if groq_key:
+                            st.session_state['media_glosses'] = translate_local_to_gloss(text, target_lang, groq_key)
+                        else:
+                            st.session_state['media_glosses'] = extract_target_glosses(text)
+                            
                         st.session_state['media_processed'] = True
                         
-                    except Exception as e:
-                        st.error("Could not understand the audio. Please try again.")
+                except Exception as e:
+                    st.error("Could not understand the audio. Please play it louder.")
 
-    # --- RIGHT COLUMN: THE INTERPRETER ---
-    with m_col2:
+        st.divider()
+        
+        # --- THE LIVE INTERPRETER ---
         st.subheader("2. Live Interpreter")
         
         if not st.session_state['media_processed']:
-            st.info("Waiting for audio input... Record audio on the left.")
-            st.image("https://via.placeholder.com/600x400.png?text=Interpreter+Standby", use_column_width=True)
+            st.info("Waiting for audio input... Record audio above.")
+            st.image("https://via.placeholder.com/600x300.png?text=Interpreter+Standby", use_column_width=True)
         else:
             if not st.session_state['media_glosses']:
                 st.warning("No signs from our target dictionary were detected.")
             else:
                 st.write(f"**Gloss Sequence Prepared:** {' ➡️ '.join(st.session_state['media_glosses'])}")
-                st.divider()
                 
-                st.info("💡 **Demo Instructions:** Start the video, then click below to sync.")
+                st.info("💡 **Demo Instructions:** Start the video on the left, then click below to sync.")
                 word_display = st.empty()
                 video_player = st.empty()
                 
