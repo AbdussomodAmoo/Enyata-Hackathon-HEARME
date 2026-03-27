@@ -463,12 +463,10 @@ if selected_page == "🌍 Daily Interaction":
         st.subheader("🦻 2. The Ambient Ear")
         st.caption("Listens for background announcements and translates them into sign language alerts.")
         
-        # Real Live Audio Capture
         audio_bytes = st.audio_input("Record ambient sound (e.g., barista, announcements)")
         
         if audio_bytes is not None:
             audio_hash = hash(audio_bytes.getvalue())
-            # Ensure it only processes new recordings
             if st.session_state['daily_last_audio_hash'] != audio_hash:
                 st.session_state['daily_last_audio_hash'] = audio_hash
                 st.info("Transcribing ambient audio...")
@@ -478,17 +476,14 @@ if selected_page == "🌍 Daily Interaction":
                 try:
                     with sr.AudioFile(audio_bytes) as source:
                         audio_data = r.record(source)
-                        
-                        # Check if target_language is set in session state from the sidebar, fallback to English
-                        lang_code = st.session_state.get('sr_lang_code', 'en-NG')
-                        text = r.recognize_google(audio_data, language=lang_code)
+                        text = r.recognize_google(audio_data)
                         st.success(f"🗣️ Heard: {text}")
                         
-                        # Route through Groq reverse translator if available, else standard extract
-                        if 'groq_api_key' in locals() and groq_api_key:
-                            st.session_state['ambient_alerts'] = translate_local_to_gloss(text, groq_api_key)
-                        else:
-                            st.session_state['ambient_alerts'] = extract_target_glosses(text)
+                        # DIRECT TEXT-TO-VIDEO MAPPING (No LLMs)
+                        import re
+                        clean_text = re.sub(r'[^\w\s]', '', text.upper())
+                        words = clean_text.split()
+                        st.session_state['ambient_alerts'] = [w for w in words if w in DYNAMIC_VIDEO_DICT]
                             
                 except Exception as e:
                     st.error("Could not understand the audio. Please try again.")
@@ -506,9 +501,8 @@ if selected_page == "🌍 Daily Interaction":
                     word_display.markdown(f"<h3 style='text-align: center; color: #4CAF50;'>{word}</h3>", unsafe_allow_html=True)
                     if word in DYNAMIC_VIDEO_DICT:
                         try:
-                            # Using the container width for a nice large player
                             video_player.video(DYNAMIC_VIDEO_DICT[word], autoplay=True, loop=False)
-                            time.sleep(2.5) # Wait for video to finish before loading the next
+                            time.sleep(2.5) 
                         except:
                             video_player.warning("Video missing")
                             time.sleep(1)
@@ -633,7 +627,20 @@ elif selected_page == "🏥 Medical Visit":
         process_triggered = False
 
         if med_input_mode == "📁 Upload Video":
-            med_vid = st.file_uploader("Upload symptom description (.mp4)", type=["mp4", "mov"], key="med_vid_upload")
+            # REPO VIDEO SELECTOR ADDED HERE
+            demo_med_options = ["None (Upload instead)", "HEADACHE", "FEVER", "STOMACH ACHE", "SICK"] # Adjust names to your actual files
+            selected_med_demo = st.selectbox("Select a Demo Video from Repo:", demo_med_options)
+            
+            med_vid = None
+            if selected_med_demo != "None (Upload instead)":
+                try:
+                    file_path = f"samples/{selected_med_demo.replace(' ', '_')}.mp4"
+                    med_vid = open(file_path, "rb")
+                except FileNotFoundError:
+                    st.error(f"Could not find video at {file_path}")
+            else:
+                med_vid = st.file_uploader("Upload symptom description (.mp4)", type=["mp4", "mov"], key="med_vid_upload")
+                
             if st.button("Translate Symptoms to Doctor", type="primary") and med_vid is not None:
                 process_triggered = True
                 with st.spinner("Analyzing patient gesture sequence..."):
@@ -673,31 +680,31 @@ elif selected_page == "🏥 Medical Visit":
         # ACTIVE DIAGNOSTICS & CHARTING LOGIC
         if process_triggered:
             if raw_predictions:
-                # Smooth the sequence
-                smoothed_signs = [raw_predictions[0]]
-                for s in raw_predictions[1:]:
-                    if s != smoothed_signs[-1]: smoothed_signs.append(s)
-                        
-                gloss_sequence = " ".join(smoothed_signs)
-                target_lang = st.session_state.get('target_language', 'English')
-                groq_key = os.environ.get("GROQ_API_KEY", "")
-                fluent_english = grammar_corrector(gloss_sequence, target_lang, groq_key)
-                
-                st.success(f"**Patient says:** {fluent_english}")
-                
-                # Active Diagnostics: Scan for medical keywords
-                medical_vocab = [w.upper() for w in TARGET_WORDS.get('medical', [])]
-                detected_this_turn = [word for word in smoothed_signs if word in medical_vocab]
-                
-                for sym in detected_this_turn:
-                    if sym not in st.session_state['medical_symptoms_list']:
-                        st.session_state['medical_symptoms_list'].append(sym)
-                
-                timestamp = time.strftime("%H:%M")
-                st.session_state['medical_clinical_notes'] += f"[{timestamp}] Patient: {fluent_english}\n"
-                
-                if detected_this_turn:
+                # Remove NONEs and get the majority vote to stabilize output
+                valid_preds = [p for p in raw_predictions if p != "NONE"]
+                if valid_preds:
+                    from collections import Counter
+                    dominant_sign = Counter(valid_preds).most_common(1)[0][0]
+                    gloss_sequence = dominant_sign
+                    
+                    target_lang = st.session_state.get('target_language', 'English')
+                    groq_key = os.environ.get("GROQ_API_KEY", "")
+                    
+                    fluent_english = grammar_corrector(gloss_sequence, target_lang, groq_key)
+                    
+                    st.success(f"**Patient says:** {fluent_english}")
+                    
+                    # Active Diagnostics: Scan for medical keywords
+                    medical_vocab = [w.upper() for w in TARGET_WORDS.get('medical', [])]
+                    if gloss_sequence in medical_vocab and gloss_sequence not in st.session_state['medical_symptoms_list']:
+                        st.session_state['medical_symptoms_list'].append(gloss_sequence)
+                    
+                    timestamp = time.strftime("%H:%M")
+                    st.session_state['medical_clinical_notes'] += f"[{timestamp}] Patient: {fluent_english}\n"
+                    
                     st.info("⚠️ Symptoms auto-logged to patient chart.")
+                else:
+                    st.error("No clear signs detected.")
             else:
                 st.error("No signs detected.")
 
@@ -721,42 +728,43 @@ elif selected_page == "🏥 Medical Visit":
         # The Doctor's Response Engine
         st.write("**Explain Diagnosis to Patient**")
         
-        # A text input acts as the manual override/demo tool for the doctor's speech
-        doc_input = st.text_input("Speak or Type Diagnosis:", "You have a fever. Take this medicine.")
+        doc_input = st.text_input("Speak or Type Diagnosis:", "Take this medicine.")
         
         if st.button("Translate to Sign Language", type="secondary"):
             if doc_input:
-                with st.spinner("Converting medical syntax to sign glosses..."):
-                    time.sleep(1)
+                with st.spinner("Converting medical syntax to sign videos..."):
                     st.session_state['doc_raw_text'] = doc_input
-                    # Reusing your excellent gloss extraction function
-                    st.session_state['doc_response_glosses'] = extract_target_glosses(doc_input)
+                    
+                    # DIRECT MATCHING (No LLMs)
+                    import re
+                    clean_text = re.sub(r'[^\w\s]', '', doc_input.upper())
+                    words = clean_text.split()
+                    st.session_state['doc_response_glosses'] = [w for w in words if w in DYNAMIC_VIDEO_DICT]
             else:
                 st.warning("Please enter a diagnosis.")
 
-        # Play the videos back to the patient
+        # SEQUENTIAL VIDEO PLAYER
         if st.session_state['doc_response_glosses']:
             st.success(f"**Doctor said:** \"{st.session_state['doc_raw_text']}\"")
-            st.info(f"**Gloss Sequence:** {' ➡️ '.join(st.session_state['doc_response_glosses'])}")
+            st.info(f"**Sequence to Play:** {' ➡️ '.join(st.session_state['doc_response_glosses'])}")
             
             st.write("**Visual Interpreter:**")
             
-            # Using columns to display the videos neatly
-            cols_per_row = 3
-            v_cols = st.columns(cols_per_row)
+            word_display = st.empty()
+            video_player = st.empty()
             
-            for i, word in enumerate(st.session_state['doc_response_glosses']):
-                col_index = i % cols_per_row
-                with v_cols[col_index]:
-                    st.write(f"**{word}**")
-                    if word in DYNAMIC_VIDEO_DICT:
-                        try:
-                            st.video(DYNAMIC_VIDEO_DICT[word], autoplay=True, loop=True)
-                        except:
-                            st.warning("Video missing")
-                    else:
-                        st.button(f"🆔 {word}")
-
+            if st.button("▶️ Play Diagnosis Sequence", type="primary", use_container_width=True):
+                for word in st.session_state['doc_response_glosses']:
+                    word_display.markdown(f"<h3 style='text-align: center; color: #4CAF50;'>{word}</h3>", unsafe_allow_html=True)
+                    try:
+                        video_player.video(DYNAMIC_VIDEO_DICT[word], autoplay=True, loop=False)
+                        time.sleep(2.5) 
+                    except:
+                        video_player.warning(f"Video missing for {word}")
+                        time.sleep(1)
+                
+                word_display.markdown("<h3 style='text-align: center;'>Interpretation Complete ✅</h3>", unsafe_allow_html=True)
+                video_player.empty()
 
 # --- PAGE: FINANCIAL INCLUSION ---
 elif selected_page == "💳 Financial Inclusion":
@@ -963,7 +971,7 @@ elif selected_page == "📺 Media Access":
     
     if 'media_processed' not in st.session_state: st.session_state['media_processed'] = False
     if 'media_glosses' not in st.session_state: st.session_state['media_glosses'] = []
-    if 'media_transcription' not in st.session_state: st.session_state['media_transcription'] = ""
+    if 'current_text_input' not in st.session_state: st.session_state['current_text_input'] = ""
     if 'last_audio_hash' not in st.session_state: st.session_state['last_audio_hash'] = None
     
     m_col1, m_col2 = st.columns([1.2, 1]) 
@@ -972,7 +980,6 @@ elif selected_page == "📺 Media Access":
         st.subheader("1. Media Source")
         media_source = st.radio("Select Input Method:", ["🎥 YouTube Link", "📁 Upload Video"], horizontal=True)
         
-        # Display the media
         if media_source == "🎥 YouTube Link":
             yt_url = st.text_input("Paste YouTube Link:", "https://www.youtube.com/watch?v=BRvhK4ChS6E")
             if yt_url: st.video(yt_url.strip())
@@ -981,10 +988,8 @@ elif selected_page == "📺 Media Access":
             if course_vid: st.video(course_vid)
 
     with m_col2:
-        # --- THE UNIVERSAL LISTENER MOVED HERE ---
+        # --- THE UNIVERSAL LISTENER ---
         st.subheader("🔊 Universal Listener")
-        target_lang = st.session_state.get('target_language', 'English')
-        st.caption(f"Listening to video in: **{target_lang}**")
         
         audio_bytes = st.audio_input("Record audio from the video")
         
@@ -999,23 +1004,31 @@ elif selected_page == "📺 Media Access":
                 try:
                     with sr.AudioFile(audio_bytes) as source:
                         audio_data = r.record(source)
-                        lang_code = st.session_state.get('sr_lang_code', 'en-NG')
-                        text = r.recognize_google(audio_data, language=lang_code)
+                        text = r.recognize_google(audio_data)
                         
-                        st.success(f"🗣️ Heard ({target_lang}): {text}")
-                        st.session_state['media_transcription'] = text
-                        
-                        # Convert to Gloss
-                        groq_key = os.environ.get("GROQ_API_KEY", "")
-                        if groq_key:
-                            st.session_state['media_glosses'] = translate_local_to_gloss(text, target_lang, groq_key)
-                        else:
-                            st.session_state['media_glosses'] = extract_target_glosses(text)
-                            
-                        st.session_state['media_processed'] = True
-                        
-                except Exception as e:
-                    st.error("Could not understand the audio. Please play it louder.")
+                        st.session_state['current_text_input'] = text
+                        st.success(f"🗣️ Heard: {text}")
+                except Exception:
+                    st.warning("Could not clearly hear the words. Please type them below instead!")
+
+        st.divider()
+        
+        # --- DIRECT TEXT TO VIDEO MAPPING ---
+        st.subheader("📝 Text to Sign Translation")
+        manual_text = st.text_area("Edit or Type Text Here:", value=st.session_state['current_text_input'], height=100)
+        
+        if st.button("✨ Prepare Sign Language Track", type="primary", use_container_width=True):
+            if manual_text.strip():
+                # NO LLMS. NO FANCY GLOSSING. JUST DIRECT MATCHING.
+                import re
+                clean_text = re.sub(r'[^\w\s]', '', manual_text.upper())
+                words = clean_text.split()
+                
+                # Check each word directly against the videos you actually have
+                st.session_state['media_glosses'] = [w for w in words if w in DYNAMIC_VIDEO_DICT]
+                st.session_state['media_processed'] = True
+            else:
+                st.warning("Please record audio or type text first.")
 
         st.divider()
         
@@ -1023,34 +1036,29 @@ elif selected_page == "📺 Media Access":
         st.subheader("2. Live Interpreter")
         
         if not st.session_state['media_processed']:
-            st.info("Waiting for audio input... Record audio above.")
-            st.image("https://via.placeholder.com/600x300.png?text=Interpreter+Standby", use_column_width=True)
+            st.info("Waiting for input... Record audio or type text above.")
         else:
             if not st.session_state['media_glosses']:
-                st.warning("No signs from our target dictionary were detected.")
+                st.warning("No sign language videos found for the specific words spoken.")
             else:
-                st.write(f"**Gloss Sequence Prepared:** {' ➡️ '.join(st.session_state['media_glosses'])}")
+                st.write(f"**Sequence to Play:** {' ➡️ '.join(st.session_state['media_glosses'])}")
                 
-                st.info("💡 **Demo Instructions:** Start the video on the left, then click below to sync.")
                 word_display = st.empty()
                 video_player = st.empty()
                 
                 if st.button("▶️ Start Live Interpretation", type="primary", use_container_width=True):
                     for word in st.session_state['media_glosses']:
                         word_display.markdown(f"<h3 style='text-align: center; color: #4CAF50;'>{word}</h3>", unsafe_allow_html=True)
-                        if word in DYNAMIC_VIDEO_DICT:
-                            try:
-                                video_player.video(DYNAMIC_VIDEO_DICT[word], autoplay=True, loop=False)
-                                time.sleep(2.5) 
-                            except:
-                                video_player.warning("Video missing")
-                                time.sleep(1)
-                        else:
-                            video_player.info(f"No video for: {word}")
+                        try:
+                            # Play the video directly
+                            video_player.video(DYNAMIC_VIDEO_DICT[word], autoplay=True, loop=False)
+                            time.sleep(2.5)
+                        except:
+                            video_player.warning(f"Video missing for {word}")
                             time.sleep(1)
                     
                     word_display.markdown("<h3 style='text-align: center;'>Interpretation Complete ✅</h3>", unsafe_allow_html=True)
                     video_player.empty()
-
+                    
 st.divider()
 st.caption("BridgeLens | Enyata x Interswitch Buildathon 2026")
