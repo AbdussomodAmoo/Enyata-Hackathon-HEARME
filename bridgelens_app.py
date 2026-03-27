@@ -555,14 +555,7 @@ if selected_page == "🌍 Daily Interaction":
     # ==========================================
     with d_col2:
         st.subheader("📷 3. Speak to the World")
-        # THE LIVE WEBRTC DEMO!
-        st.write("**Live AI Tracking Demo**")
-        webrtc_streamer(
-            key="live_sign", 
-            video_processor_factory=SkeletonTransformer,
-            rtc_configuration=RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]})
-        )
-        
+                
         st.divider()
         st.write("**Execute Translation**")        
         # We use file uploader for the hackathon demo to ensure stable execution on stage
