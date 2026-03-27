@@ -14,7 +14,7 @@ from groq import Groq
 import requests
 import re
 from urllib.parse import urlparse, parse_qs
-import av
+
 
 
 mp_drawing = mp.solutions.drawing_utils
