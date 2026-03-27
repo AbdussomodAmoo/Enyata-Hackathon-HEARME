@@ -13,3 +13,4 @@ gTTS
 SpeechRecognition
 pydub
 groq
+youtube-transcript-api
