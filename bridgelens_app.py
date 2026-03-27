@@ -17,6 +17,8 @@ import re
 from youtube_transcript_api import YouTubeTranscriptApi
 from urllib.parse import urlparse, parse_qs
 
+mp_drawing = mp.solutions.drawing_utils
+mp_holistic = mp.solutions.holistic
 
 # --- INITIAL SETUP ---
 st.set_page_config(page_title="BridgeLens | Universal Accessibility", layout="wide", page_icon="🤟")
@@ -78,33 +80,77 @@ def extract_landmarks(image_np):
             return None
         return row
 
-def grammar_corrector(sign_gloss_text):
-    """Uses Groq (Llama 3) to convert rough gloss into fluent English."""
-    # If the input is just one word, don't waste an API call!
-    if len(sign_gloss_text.split()) <= 1:
+def grammar_corrector(sign_gloss_text, target_lang, api_key):
+    """Uses Groq LLM to convert rough gloss into fluent sentences in the chosen language."""
+    if not api_key:
+        st.warning("⚠️ Please enter your Groq API Key in the sidebar.")
+        return sign_gloss_text # Fallback to raw gloss if no key
+        
+    glosses = sign_gloss_text.split()
+    if len(glosses) <= 1:
         return sign_gloss_text.capitalize()
         
     try:
-        chat_completion = groq_client.chat.completions.create(
+        # Initialize client exactly like your vision_app script
+        groq_client = Groq(api_key=api_key)
+        
+        prompt = f"""You are an expert Sign Language translator. 
+I will provide a sequence of sign language glosses (uppercase words).
+Your job is to translate these glosses into a natural, fluent, and culturally accurate sentence in {target_lang}.
+
+Rules:
+1. If the sequence is just a random collection of nouns with no clear action, DO NOT invent a sentence. Just return the translated words in {target_lang}.
+2. If they form a clear sentence, translate it grammatically correctly into {target_lang}.
+3. ONLY output the final translation. Do not include explanations or notes.
+
+Glosses to translate: {sign_gloss_text}"""
+
+        response = groq_client.chat.completions.create(
+            model="llama3-8b-8192",
             messages=[
-                {
-                    "role": "system",
-                    "content": "You are a literal Sign Language translator. I will provide a sequence of uppercase words. If the sequence is just a repeated word or a random collection of nouns, DO NOT invent a sentence. Just return the words. ONLY form a sentence if the words naturally create a clear subject-action relationship."
-                },
-                {
-                    "role": "user",
-                    "content": f"Translate these signs: {sign_gloss_text}"
-                }
+                {"role": "system", "content": f"You are a fluent {target_lang} speaker and native sign language interpreter."},
+                {"role": "user", "content": prompt}
             ],
-            model="llama3-80b-8192", # Switched to the smarter 70B model
-            temperature=0.0,
-            max_tokens=50,
+            temperature=0.0, # Keep it 0 to prevent hallucinations
+            max_tokens=100
         )
-        return chat_completion.choices[0].message.content.strip()
+        return response.choices[0].message.content.strip()
+        
     except Exception as e:
-        # This will pop up a warning on your screen so you know if the API broke!
-        st.toast(f"LLM Warning: {str(e)[:50]}...", icon="⚠️")
+        st.toast(f"LLM Error: {e}", icon="⚠️")
         return sign_gloss_text
+
+def translate_local_to_gloss(spoken_text, api_key):
+    """Converts spoken text (English, Yoruba, Igbo, Hausa) into English Sign Language Glosses."""
+    if not api_key:
+        # Simple fallback if no API key is provided
+        return [w.upper() for w in spoken_text.split()] 
+        
+    try:
+        groq_client = Groq(api_key=api_key)
+        prompt = f"""You are a Sign Language interpreter. 
+Convert the following spoken sentence into a core English Sign Language Gloss sequence.
+Extract ONLY the core keywords (subjects, verbs, important nouns/adjectives).
+Output them as a space-separated string of UPPERCASE ENGLISH WORDS.
+
+Spoken text: "{spoken_text}"
+Gloss sequence:"""
+
+        response = groq_client.chat.completions.create(
+            model="llama3-8b-8192",
+            messages=[
+                {"role": "system", "content": "You output ONLY uppercase English gloss words separated by spaces. No punctuation."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.0,
+            max_tokens=50
+        )
+        # Returns a list of glosses: ['WHERE', 'HOSPITAL', 'GO']
+        return response.choices[0].message.content.strip().split() 
+        
+    except Exception:
+        return [w.upper() for w in spoken_text.split()]
+
 def autoplay_audio(text):
     """Generates and auto-plays text-to-speech audio with error handling."""
     try:
@@ -266,7 +312,28 @@ st.divider()
 # --- 1. GLOBAL SIDEBAR (ALWAYS VISIBLE) ---
 # ==========================================
 with st.sidebar:
-    st.image("https://via.placeholder.com/300x100.png?text=BridgeLens+Logo") 
+    st.header("⚙️ System Configuration")
+    # Using the exact style from your vision_app script
+    groq_api_key = st.text_input("🔑 Groq API Key", type="password", help="Get free key at console.groq.com")
+    
+    if groq_api_key:
+        os.environ["GROQ_API_KEY"] = groq_api_key
+        
+    # The new Indigenous Language preference!
+    target_language = st.selectbox(
+        "🌍 Output Language", 
+        ["English", "Nigerian Pidgin", "Yoruba", "Igbo", "Hausa"]
+    )
+    
+    # We will also map the language to Google Speech Recognition codes for the Universal Listener
+    sr_lang_map = {
+        "English": "en-NG",
+        "Nigerian Pidgin": "en-NG", # Fallback to Nigerian English accent model
+        "Yoruba": "yo-NG",
+        "Igbo": "ig-NG",
+        "Hausa": "ha-NG"
+    }
+    st.session_state['sr_lang_code'] = sr_lang_map[target_language] 
     st.divider()
     
     selected_page = st.radio("Navigation", [
@@ -351,21 +418,22 @@ def get_youtube_transcript(url):
 # ==========================================
 
 # --- PAGE: DAILY INTERACTION ---
-if selected_page == "🌍 Daily Interaction":
+elif selected_page == "🌍 Daily Interaction":
     with st.sidebar:
         st.header("🌍 Daily Tools")
         st.write("✅ **Ambient Ear:** Ready")
         st.write("⚡ **Context AI:** Active")
         st.write("---")
+        show_skeleton = st.sidebar.toggle("⚙️ Developer Mode (Show Skeleton)", value=True)
         st.write("**Why this wins:**")
-        st.write("By restricting the AI vocabulary based on the user's location, we drop processing latency to near-zero and mathematically eliminate out-of-context hallucinated translations.")
+        st.write("By restricting the AI vocabulary based on the user's location, we drop processing latency to near-zero and eliminate hallucinated translations.")
         
     st.title("🌍 Daily Interaction Hub")
     st.write("Seamless two-way communication and environmental awareness for everyday life.")
     
     if 'active_context' not in st.session_state: st.session_state['active_context'] = "General"
-    if 'ambient_listening' not in st.session_state: st.session_state['ambient_listening'] = False
     if 'ambient_alerts' not in st.session_state: st.session_state['ambient_alerts'] = []
+    if 'daily_last_audio_hash' not in st.session_state: st.session_state['daily_last_audio_hash'] = None
     
     # ==========================================
     # 1. CONTEXTUAL QUICK-KEYS (TOP BAR)
@@ -387,7 +455,7 @@ if selected_page == "🌍 Daily Interaction":
     st.info(f"🧠 **AI Model Optimized:** Filtering out noise. Prioritizing **{st.session_state['active_context']}** vocabulary.")
     st.divider()
 
-    d_col1, d_col2 = st.columns([1, 1.2])
+    d_col1, d_col2 = st.columns([1, 1])
 
     # ==========================================
     # 2. AMBIENT EAR (LEFT COLUMN - PASSIVE)
@@ -396,45 +464,61 @@ if selected_page == "🌍 Daily Interaction":
         st.subheader("🦻 2. The Ambient Ear")
         st.caption("Listens for background announcements and translates them into sign language alerts.")
         
-        ambient_toggle = st.toggle("Activate Ambient Listening", value=st.session_state['ambient_listening'])
+        # Real Live Audio Capture
+        audio_bytes = st.audio_input("Record ambient sound (e.g., barista, announcements)")
         
-        if ambient_toggle:
-            st.session_state['ambient_listening'] = True
-            st.write("🎙️ *Listening to environment...*")
-            
-            st.write("---")
-            st.caption("🎤 Demo Override: Trigger a background event to show the judges.")
-            event = st.selectbox("Simulate Event:", ["None", "Train Announcement", "Barista Calling Order", "Hospital Page"])
-            
-            if st.button("Trigger Event", type="secondary"):
-                if event == "Train Announcement":
-                    st.session_state['ambient_alerts'] = extract_target_glosses("The train to the city will be delayed. Please wait here.")
-                    st.warning("🔊 Overheard: 'The train to the city will be delayed. Please wait here.'")
-                elif event == "Barista Calling Order":
-                    st.session_state['ambient_alerts'] = extract_target_glosses("Your cold water and food are ready. Come take them.")
-                    st.success("🔊 Overheard: 'Your cold water and food are ready. Come take them.'")
-                elif event == "Hospital Page":
-                    st.session_state['ambient_alerts'] = extract_target_glosses("The doctor is ready for the sick patient. Please go to the room.")
-                    st.error("🔊 Overheard: 'The doctor is ready for the sick patient.'")
-                    
-            # --- VISUAL ALERT DISPLAY ---
-            if st.session_state['ambient_alerts']:
-                st.write("**Visual Alert:**")
-                alert_cols = st.columns(len(st.session_state['ambient_alerts']))
-                for i, word in enumerate(st.session_state['ambient_alerts']):
-                    with alert_cols[i % len(alert_cols)]: # Wrap around columns safely
-                        st.write(f"**{word}**")
-                        if word in DYNAMIC_VIDEO_DICT:
-                            try:
-                                st.video(DYNAMIC_VIDEO_DICT[word], autoplay=True, loop=True)
-                            except:
-                                st.warning("Video missing")
+        if audio_bytes is not None:
+            audio_hash = hash(audio_bytes.getvalue())
+            # Ensure it only processes new recordings
+            if st.session_state['daily_last_audio_hash'] != audio_hash:
+                st.session_state['daily_last_audio_hash'] = audio_hash
+                st.info("Transcribing ambient audio...")
+                
+                import speech_recognition as sr
+                r = sr.Recognizer()
+                try:
+                    with sr.AudioFile(audio_bytes) as source:
+                        audio_data = r.record(source)
+                        
+                        # Check if target_language is set in session state from the sidebar, fallback to English
+                        lang_code = st.session_state.get('sr_lang_code', 'en-NG')
+                        text = r.recognize_google(audio_data, language=lang_code)
+                        st.success(f"🗣️ Heard: {text}")
+                        
+                        # Route through Groq reverse translator if available, else standard extract
+                        if 'groq_api_key' in locals() and groq_api_key:
+                            st.session_state['ambient_alerts'] = translate_local_to_gloss(text, groq_api_key)
                         else:
-                            st.button(f"🆔 {word}", key=f"alert_{word}_{i}")
-        else:
-            st.session_state['ambient_listening'] = False
-            st.session_state['ambient_alerts'] = []
-            st.info("Ambient Ear is paused to save battery.")
+                            st.session_state['ambient_alerts'] = extract_target_glosses(text)
+                            
+                except Exception as e:
+                    st.error("Could not understand the audio. Please try again.")
+
+        # --- VISUAL ALERT DISPLAY (Sequential & Large) ---
+        if st.session_state['ambient_alerts']:
+            st.write(f"**Alert Sequence:** {' ➡️ '.join(st.session_state['ambient_alerts'])}")
+            st.divider()
+            
+            word_display = st.empty()
+            video_player = st.empty()
+            
+            if st.button("▶️ Play Alert Sequence", type="primary", use_container_width=True):
+                for word in st.session_state['ambient_alerts']:
+                    word_display.markdown(f"<h3 style='text-align: center; color: #4CAF50;'>{word}</h3>", unsafe_allow_html=True)
+                    if word in DYNAMIC_VIDEO_DICT:
+                        try:
+                            # Using the container width for a nice large player
+                            video_player.video(DYNAMIC_VIDEO_DICT[word], autoplay=True, loop=False)
+                            time.sleep(2.5) # Wait for video to finish before loading the next
+                        except:
+                            video_player.warning("Video missing")
+                            time.sleep(1)
+                    else:
+                        video_player.info(f"No video for: {word}")
+                        time.sleep(1)
+                
+                word_display.markdown("<h3 style='text-align: center;'>Alert Complete ✅</h3>", unsafe_allow_html=True)
+                video_player.empty()
 
     # ==========================================
     # 3. ACTIVE SIGNING (RIGHT COLUMN - ACTIVE)
@@ -443,10 +527,10 @@ if selected_page == "🌍 Daily Interaction":
         st.subheader("📷 3. Speak to the World")
         st.caption(f"Sign to the camera. AI is mathematically restricted to **{st.session_state['active_context']}** terms.")
         
-        # We use file uploader for the hackathon demo to ensure 100% stable execution on stage
+        # We use file uploader for the hackathon demo to ensure stable execution on stage
         daily_vid = st.file_uploader("Upload Sign Sequence (.mp4)", type=["mp4", "mov"], key="daily_vid")
         
-        if st.button("Translate Sign to Speech", type="primary"):
+        if st.button("Translate Sign to Speech", type="primary", use_container_width=True):
             if daily_vid:
                 with st.spinner(f"Processing via {st.session_state['active_context']} Edge Model..."):
                     
@@ -455,50 +539,55 @@ if selected_page == "🌍 Daily Interaction":
                     tfile.write(daily_vid.read())
                     cap = cv2.VideoCapture(tfile.name)
                     
+                    video_placeholder = st.empty() 
                     raw_predictions = []
                     frame_count = 0
                     
-                    while cap.isOpened():
-                        ret, frame = cap.read()
-                        if not ret: break
-                        
-                        # Process every 4th frame for speed
-                        if frame_count % 4 == 0:
-                            img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                            landmarks = extract_landmarks(img_rgb)
+                    with mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5) as holistic:
+                        while cap.isOpened():
+                            ret, frame = cap.read()
+                            if not ret: break
                             
-                            if landmarks:
-                                # 🚨 WE PASS THE ACTIVE CONTEXT TO THE PREDICTOR
-                                sign = predict_with_context(landmarks, st.session_state['active_context'])
-                                if sign != "NONE":
-                                    raw_predictions.append(sign)
-                                    
-                        frame_count += 1
-                    cap.release()
+                            img_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                            
+                            if frame_count % 3 == 0:
+                                results = holistic.process(img_rgb)
+                                
+                                if show_skeleton:
+                                    mp_drawing.draw_landmarks(img_rgb, results.pose_landmarks, mp_holistic.POSE_CONNECTIONS)
+                                    mp_drawing.draw_landmarks(img_rgb, results.left_hand_landmarks, mp_holistic.HAND_CONNECTIONS)
+                                    mp_drawing.draw_landmarks(img_rgb, results.right_hand_landmarks, mp_holistic.HAND_CONNECTIONS)
+                                
+                                video_placeholder.image(img_rgb, channels="RGB", use_container_width=True)
+                                
+                                landmarks = extract_landmarks(img_rgb)
+                                
+                                if landmarks:
+                                    sign = predict_with_context(landmarks, st.session_state['active_context'])
+                                    if sign != "NONE":
+                                        raw_predictions.append(sign)
+                                        
+                            frame_count += 1
+                        cap.release()
+                    
+                    video_placeholder.empty()
                     
                     if raw_predictions:
-                        # Smooth the sequence
                         smoothed_signs = [raw_predictions[0]]
                         for s in raw_predictions[1:]:
-                            if s != smoothed_signs[-1]: 
-                                smoothed_signs.append(s)
+                            if s != smoothed_signs[-1]: smoothed_signs.append(s)
                                 
                         gloss_sequence = " ".join(smoothed_signs)
                         st.info(f"**Detected Gloss:** {gloss_sequence}")
                         
-                        # Pass to Groq LLM for natural grammar
-                        fluent_english = grammar_corrector(gloss_sequence)
-                        st.success(f"🗣️ **English Audio Out:** \"{fluent_english}\"")
+                        target_lang = st.session_state.get('target_language', 'English')
+                        api_key = groq_api_key if 'groq_api_key' in locals() else None
                         
-                        try:
-                            autoplay_audio(fluent_english)
-                        except:
-                            pass 
+                        fluent_sentence = grammar_corrector(gloss_sequence, target_lang, api_key)
+                        st.success(f"🗣️ **Audio Out ({target_lang}):** \"{fluent_sentence}\"")
                     else:
                         st.error("No clear signs detected matching the current context.")
-            else:
-                st.warning("Please upload a video to translate.")
-
+                        
 
 # --- PAGE: MEDICAL VISIT ---
 elif selected_page == "🏥 Medical Visit":
@@ -852,111 +941,77 @@ elif selected_page == "📺 Media Access":
     with st.sidebar:
         st.header("📺 Content Tools")
         st.write("Turn any video or lecture into a fully accessible sign language experience.")
-        st.write("---")
         
     st.title("📺 Digital Content Bridge")
     st.write("Real-time side-by-side Sign Language interpretation for video content.")
     
-    # Session States
     if 'media_processed' not in st.session_state: st.session_state['media_processed'] = False
     if 'media_glosses' not in st.session_state: st.session_state['media_glosses'] = []
     if 'media_transcription' not in st.session_state: st.session_state['media_transcription'] = ""
-    if 'auto_transcript' not in st.session_state: st.session_state['auto_transcript'] = "" 
     if 'last_audio_hash' not in st.session_state: st.session_state['last_audio_hash'] = None
     
-    m_col1, m_col2 = st.columns([1.2, 1]) # Left column slightly wider for the video
+    m_col1, m_col2 = st.columns([1.2, 1]) 
     
-    # ==========================================
-    # LEFT COLUMN: THE MEDIA PLAYER
-    # ==========================================
     with m_col1:
         st.subheader("1. Media Source")
         media_source = st.radio("Select Input Method:", ["🎥 YouTube Link", "📁 Upload Video"], horizontal=True)
         
-        yt_url = ""
-        course_vid = None
-        
+        # Display the media purely for visuals
         if media_source == "🎥 YouTube Link":
             yt_url = st.text_input("Paste YouTube Link:", "https://www.youtube.com/watch?v=BRvhK4ChS6E")
-            if yt_url and yt_url.strip().startswith("http"):
-                try:
-                    st.video(yt_url.strip())
-                except Exception:
-                    st.error("Could not load video. Check the link.")
-                    
-            if st.button("⬇️ Auto-Extract YouTube Transcript", use_container_width=True):
-                if yt_url:
-                    with st.spinner("Connecting to YouTube API..."):
-                        real_transcript = get_youtube_transcript(yt_url)
-                        st.session_state['auto_transcript'] = real_transcript
-                        if "Error" not in real_transcript:
-                            st.success("Transcript Extracted!")
-                        else:
-                            st.warning(real_transcript)
-                            
+            if yt_url: st.video(yt_url.strip())
         elif media_source == "📁 Upload Video":
             course_vid = st.file_uploader("Upload Course Video", type=["mp4", "mov"], key="course_vid")
             if course_vid: st.video(course_vid)
-                    
-        # --- UNIVERSAL AUDIO LISTENER (Using your SpeechRecognition Code!) ---
-        st.write("---")
-        st.caption("🎙️ Missing transcript? Play the video out loud and record it here:")
-        audio_buffer = st.audio_input("Record Audio from Video")
+
+        st.divider()
         
-        if audio_buffer is not None:
-            audio_hash = hash(audio_buffer.getvalue())
-            # Ensure we only process new audio recordings
+        # --- YOUR BULLETPROOF AUDIO LISTENER ---
+        st.subheader("🔊 Universal Listener")
+        st.caption("Play the video out loud. Converts nearby speech to Sign Glosses.")
+        
+        audio_bytes = st.audio_input("Record audio from the video")
+        
+        if audio_bytes is not None:
+            audio_hash = hash(audio_bytes.getvalue())
+            # Prevents Streamlit from infinitely reloading the same audio
             if st.session_state['last_audio_hash'] != audio_hash:
                 st.session_state['last_audio_hash'] = audio_hash
-                with st.spinner("Transcribing via Universal Listener..."):
-                    import speech_recognition as sr
-                    r = sr.Recognizer()
+                st.info("Transcribing audio...")
+                
+                import speech_recognition as sr
+                r = sr.Recognizer()
+                with sr.AudioFile(audio_bytes) as source:
+                    audio_data = r.record(source)
                     try:
-                        with sr.AudioFile(audio_buffer) as source:
-                            audio_data = r.record(source)
-                            text = r.recognize_google(audio_data)
-                            st.session_state['auto_transcript'] = text
-                            st.success(f"🗣️ Heard: {text}")
+                        text = r.recognize_google(audio_data)
+                        st.success(f"🗣️ Heard: {text}")
+                        
+                        # Instantly process it for the right column!
+                        st.session_state['media_transcription'] = text
+                        # NOTE: Using extract_target_glosses based on our previous setup. 
+                        # Change to convert_to_nsl_gloss if that's your specific function name!
+                        st.session_state['media_glosses'] = extract_target_glosses(text) 
+                        st.session_state['media_processed'] = True
+                        
                     except Exception as e:
-                        st.error(f"Could not understand the audio. Ensure it's clear. Details: {e}")
+                        st.error("Could not understand the audio. Please try again.")
 
-        # --- TEXT PROCESSING ---
-        text_to_translate = st.text_area(
-            "Final Text to Translate:", 
-            value=st.session_state.get('auto_transcript', ''), 
-            height=100
-        )
-
-        if st.button("✨ Prepare Sign Language Track", type="primary", use_container_width=True):
-            if text_to_translate.strip() == "":
-                st.warning("Please extract a transcript, record audio, or enter text.")
-            else:
-                with st.spinner("Processing NLP & Retrieving Sign Videos..."):
-                    time.sleep(1)
-                    st.session_state['media_processed'] = True
-                    st.session_state['media_transcription'] = text_to_translate
-                    st.session_state['media_glosses'] = extract_target_glosses(text_to_translate)
-
-    # ==========================================
-    # RIGHT COLUMN: THE LIVE INTERPRETER
-    # ==========================================
+    # --- RIGHT COLUMN: THE INTERPRETER ---
     with m_col2:
         st.subheader("2. Live Interpreter")
         
         if not st.session_state['media_processed']:
-            st.info("Waiting for media input... Click **'Prepare Sign Language Track'** on the left.")
+            st.info("Waiting for audio input... Record audio on the left.")
             st.image("https://via.placeholder.com/600x400.png?text=Interpreter+Standby", use_column_width=True)
-            
         else:
             if not st.session_state['media_glosses']:
-                st.warning("No signs from our target dictionary were detected in that sentence.")
+                st.warning("No signs from our target dictionary were detected.")
             else:
                 st.write(f"**Gloss Sequence Prepared:** {' ➡️ '.join(st.session_state['media_glosses'])}")
                 st.divider()
                 
-                # --- THE SYNCHRONIZATION TRICK ---
-                st.info("💡 **Demo Instructions:** Start playing the video on the left, then immediately click the button below to simulate real-time sync.")
-                
+                st.info("💡 **Demo Instructions:** Start the video, then click below to sync.")
                 word_display = st.empty()
                 video_player = st.empty()
                 
@@ -966,7 +1021,6 @@ elif selected_page == "📺 Media Access":
                         if word in DYNAMIC_VIDEO_DICT:
                             try:
                                 video_player.video(DYNAMIC_VIDEO_DICT[word], autoplay=True, loop=False)
-                                # Adjust this sleep time based on the average length of your videos (e.g., 2.5 seconds)
                                 time.sleep(2.5) 
                             except:
                                 video_player.warning("Video missing")
@@ -977,7 +1031,6 @@ elif selected_page == "📺 Media Access":
                     
                     word_display.markdown("<h3 style='text-align: center;'>Interpretation Complete ✅</h3>", unsafe_allow_html=True)
                     video_player.empty()
-
 
 st.divider()
 st.caption("BridgeLens | Enyata x Interswitch Buildathon 2026")
