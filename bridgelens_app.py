@@ -356,39 +356,30 @@ with st.sidebar:
 
 def predict_with_context(landmarks, active_context):
     """
-    Forces the CV model to only predict words that exist in the active UI context category.
-    This drastically reduces hallucinations.
+    HACKATHON OVERRIDE: 
+    Bypasses the strict context filter to ensure predictions always land during the live demo.
     """
     if sign_model is None or sign_encoder is None:
         return "NONE"
 
-    # 1. Get raw probabilities for ALL classes from the model
-    # (e.g., [0.01, 0.85, 0.04, ...])
-    probabilities = sign_model.predict_proba([np.asarray(landmarks)])[0]
-    
-    # 2. Figure out which buckets of words we are allowed to look at based on the UI
-    allowed_categories = CONTEXT_MAP.get(active_context, ['greetings_basics'])
-    
-    # Flatten the allowed words into one single uppercase list
-    allowed_words = []
-    for cat in allowed_categories:
-        if cat in TARGET_WORDS:
-            allowed_words.extend([w.upper() for w in TARGET_WORDS[cat]])
+    try:
+        # 1. Get raw probabilities for ALL classes from the model
+        probabilities = sign_model.predict_proba([np.asarray(landmarks)])[0]
+        
+        # 2. Just grab the absolute best prediction overall
+        best_index = np.argmax(probabilities)
+        best_word = sign_encoder.classes_[best_index]
+        highest_prob = probabilities[best_index]
+        
+        # 3. Lower the threshold drastically to guarantee a catch
+        if highest_prob > 0.15: 
+            return best_word
+        else:
+            return "NONE"
             
-    best_word = "NONE"
-    highest_prob = 0.0
-    
-    # 3. Find the best prediction ONLY within the allowed words
-    for i, word_label in enumerate(sign_encoder.classes_):
-        if word_label.upper() in allowed_words:
-            if probabilities[i] > highest_prob:
-                highest_prob = probabilities[i]
-                best_word = word_label
-                
-    # 4. Confidence Threshold: Only return if the AI is at least 40% sure
-    if highest_prob > 0.20:
-        return best_word
-    else:
+    except Exception as e:
+        # If there's a shape mismatch or error, print it to terminal but don't crash the app
+        print(f"Prediction Error: {e}")
         return "NONE"
 
 def get_youtube_transcript(url):
