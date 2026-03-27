@@ -418,7 +418,7 @@ def get_youtube_transcript(url):
 # ==========================================
 
 # --- PAGE: DAILY INTERACTION ---
-elif selected_page == "🌍 Daily Interaction":
+if selected_page == "🌍 Daily Interaction":
     with st.sidebar:
         st.header("🌍 Daily Tools")
         st.write("✅ **Ambient Ear:** Ready")
