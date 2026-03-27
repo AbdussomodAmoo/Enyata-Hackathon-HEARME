@@ -9,7 +9,6 @@ from PIL import Image
 from gtts import gTTS
 import base64
 import speech_recognition as sr
-from transformers import T5Tokenizer, T5ForConditionalGeneration
 import os
 from groq import Groq
 import requests
@@ -602,8 +601,9 @@ if selected_page == "🌍 Daily Interaction":
                         gloss_sequence = " ".join(smoothed_signs)
                         st.info(f"**Detected Gloss:** {gloss_sequence}")
                         
+                        # THE FIX: Safely grab the language and the API key from the environment
                         target_lang = st.session_state.get('target_language', 'English')
-                        api_key = groq_api_key if 'groq_api_key' in locals() else None
+                        api_key = os.environ.get("GROQ_API_KEY", "")
                         
                         fluent_sentence = grammar_corrector(gloss_sequence, target_lang, api_key)
                         st.success(f"🗣️ **Audio Out ({target_lang}):** \"{fluent_sentence}\"")
@@ -687,7 +687,9 @@ elif selected_page == "🏥 Medical Visit":
                     if s != smoothed_signs[-1]: smoothed_signs.append(s)
                         
                 gloss_sequence = " ".join(smoothed_signs)
-                fluent_english = grammar_corrector(gloss_sequence) # Ensure this points to your Llama 3/8B setup
+                target_lang = st.session_state.get('target_language', 'English')
+                groq_key = os.environ.get("GROQ_API_KEY", "")
+                fluent_english = grammar_corrector(gloss_sequence, target_lang, groq_key)
                 
                 st.success(f"**Patient says:** {fluent_english}")
                 
