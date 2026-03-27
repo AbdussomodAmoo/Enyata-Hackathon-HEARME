@@ -315,9 +315,8 @@ def predict_with_context(landmarks, active_context):
         return "NONE"
 
 def get_youtube_transcript(url):
-    """Extracts the actual transcript from a YouTube video."""
+    """Extracts the actual transcript using the updated YouTube API syntax."""
     try:
-        # 1. Extract the Video ID from the URL
         parsed_url = urlparse(url)
         video_id = ""
         if parsed_url.hostname == 'youtu.be':
@@ -329,23 +328,19 @@ def get_youtube_transcript(url):
         if not video_id:
             return "Error: Could not extract Video ID from URL."
 
-        # 2. Fetch the transcript using the API
-        transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
+        # THE FIX: Instantiate the object first, then call .fetch()
+        ytt_api = YouTubeTranscriptApi()
+        transcript_list = ytt_api.fetch(video_id)
         
-        # 3. Combine the text segments (limiting to the first 5-6 sentences for a quick demo)
         full_text = " ".join([segment['text'] for segment in transcript_list])
-        
-        # Grab a reasonable chunk (e.g., first 200 characters) to keep the demo snappy
         snippet = full_text[:200] + "..." if len(full_text) > 200 else full_text
-        
-        # Clean up common YouTube transcript artifacts (like "[Music]")
         snippet = re.sub(r'\[.*?\]', '', snippet).strip()
         
         return snippet
 
     except Exception as e:
-        return f"Error: Could not retrieve transcript. (Make sure the video has closed captions enabled). Details: {str(e)}"
-
+        return f"Error: {str(e)}"
+        
 # ==========================================
 # --- 2. PAGE ROUTING LOGIC ---
 # ==========================================
@@ -881,7 +876,6 @@ elif selected_page == "📺 Media Access":
                 except Exception:
                     st.error("Could not load video. Check the link.")
             
-            # --- THE REAL AUTO-EXTRACT BUTTON ---
             if st.button("⬇️ Auto-Extract Real Transcript"):
                 if yt_url:
                     with st.spinner("Connecting to YouTube API..."):
@@ -899,24 +893,53 @@ elif selected_page == "📺 Media Access":
         elif media_source == "📁 Upload Video":
             course_vid = st.file_uploader("Upload Course Video", type=["mp4", "mov"], key="course_vid")
             if course_vid: st.video(course_vid)
-            text_to_translate = st.text_area("Audio Transcript:", "Please pay the money at the bank.", height=100)
+            text_to_translate = st.text_area("Audio Transcript:", st.session_state.get('auto_transcript', ''), height=100)
             
         else:
             st.info("Type any sentence to see it translated instantly.")
             text_to_translate = st.text_area("Enter Text:", "Hello, I need help.", height=100)
 
+        # --- THE UNIVERSAL AUDIO LISTENER (FALLBACK) ---
+        st.divider()
+        st.subheader("🎙️ Universal Audio Listener")
+        st.caption("Missing transcript? Play the video out loud and let our AI listen.")
+        
+        audio_buffer = st.audio_input("Record Audio from Video")
+        
+        if audio_buffer:
+            with st.spinner("Transcribing via Groq Whisper AI..."):
+                import tempfile
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_audio:
+                    tmp_audio.write(audio_buffer.getvalue())
+                    tmp_audio_path = tmp_audio.name
+                
+                try:
+                    with open(tmp_audio_path, "rb") as file:
+                        transcription = groq_client.audio.transcriptions.create(
+                            file=(tmp_audio_path, file.read()),
+                            model="whisper-large-v3", # Uses Groq's lightning-fast Whisper model
+                            response_format="json",
+                            language="en",
+                            temperature=0.0
+                        )
+                        st.session_state['auto_transcript'] = transcription.text
+                        st.success("Audio transcribed successfully! Click Translate.")
+                        st.rerun() # Refreshes the page to load the text into the text box above
+                except Exception as e:
+                    st.error(f"Whisper Transcription Failed: {e}")
+
         # The Translation Trigger
+        st.divider()
         if st.button("✨ Translate to Sign Language", type="primary"):
             if text_to_translate.strip() == "":
-                st.warning("Please extract a transcript or enter text to translate.")
+                st.warning("Please extract a transcript, record audio, or enter text to translate.")
             else:
                 with st.spinner("Processing NLP & Retrieving Sign Videos..."):
                     time.sleep(1)
                     st.session_state['media_processed'] = True
                     st.session_state['media_transcription'] = text_to_translate
-                    # This uses your extract_target_glosses() function to pull the keywords!
                     st.session_state['media_glosses'] = extract_target_glosses(text_to_translate)
-
+                    
     # --- DISPLAY THE TRANSLATION ON THE RIGHT SIDE ---
     with m_col2:
         st.subheader("2. Sign Language Interpreter")
