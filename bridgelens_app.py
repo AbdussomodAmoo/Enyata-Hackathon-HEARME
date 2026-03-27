@@ -876,7 +876,7 @@ elif selected_page == "📺 Media Access":
         # --- TOP SECTION: VIDEO PLAYER ---
         yt_url = ""
         if media_source == "🎥 YouTube Link":
-            yt_url = st.text_input("Paste YouTube Link:", "https://www.youtube.com/watch?v=BRvhK4ChS6E")
+            yt_url = st.text_input("Paste YouTube Link:", "https://www.youtube.com/watch?v=G3BuWCmdDyc")
             if yt_url and yt_url.strip().startswith("http"):
                 try:
                     st.video(yt_url.strip())
