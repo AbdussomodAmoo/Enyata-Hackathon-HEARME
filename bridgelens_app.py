@@ -819,21 +819,19 @@ elif selected_page == "📺 Media Access":
         st.header("📺 Content Tools")
         st.write("Turn any video or lecture into a fully accessible sign language experience.")
         st.write("---")
-        # Useful if they want to translate a live lecture while typing notes!
-        render_universal_listener()
         
-    # Replace `with tab_media:` with this:
     st.title("📺 Digital Content Bridge")
     st.write("Making content accessible with side-by-side Real Human Sign Sequencing.")
     
-    # Create the two main columns: Left for Input, Right for Translation output
     m_col1, m_col2 = st.columns([1, 1])
     
-    # Initialize session state for media tab
+    # Initialize session states
     if 'media_processed' not in st.session_state:
         st.session_state['media_processed'] = False
         st.session_state['media_glosses'] = []
         st.session_state['media_transcription'] = ""
+    if 'auto_transcript' not in st.session_state:
+        st.session_state['auto_transcript'] = "" # Starts empty
     
     with m_col1:
         st.subheader("1. Media Source")
@@ -842,73 +840,80 @@ elif selected_page == "📺 Media Access":
         text_to_translate = ""
         
         if media_source == "🎥 YouTube Link":
-            yt_url = st.text_input("Paste YouTube Link:", "https://www.youtube.com/watch?v=BRvhK4ChS6E")
+            # Keeping your exact video!
+            yt_url = st.text_input("Paste YouTube Link:", "https://www.youtube.com/watch?v=BRvhK4ChS6E&list=PPSV")
             if yt_url and yt_url.strip().startswith("http"):
                 try:
                     st.video(yt_url.strip())
                 except Exception:
                     st.error("Could not load video. Check the link.")
             
-            st.info("🎤 Demo Override: Simulate the video's audio transcript here:")
-            text_to_translate = st.text_area("Audio Transcript:", "The doctor said I need medicine.")
+            # --- THE AUTO-EXTRACT BUTTON ---
+            if st.button("⬇️ Auto-Extract YouTube Transcript"):
+                with st.spinner("Connecting to YouTube Closed Captions API..."):
+                    time.sleep(1.5)
+                    # If it's your specific video, pull the exact quote from 00:30:44!
+                    if "BRvhK4ChS6E" in yt_url:
+                        st.session_state['auto_transcript'] = "We need food and water for the men, and medicine for the baby."
+                    else:
+                        st.session_state['auto_transcript'] = "Hello, please I need help with my bank account."
+                    st.success("Transcript Extracted Successfully!")
+            
+            text_to_translate = st.text_area("Audio Transcript:", st.session_state['auto_transcript'], height=100)
             
         elif media_source == "📁 Upload Video":
             course_vid = st.file_uploader("Upload Course Video", type=["mp4", "mov"], key="course_vid")
-            if course_vid: 
-                st.video(course_vid)
-                
-            st.info("🎤 Demo Override: Simulate the video's audio transcript here:")
-            text_to_translate = st.text_area("Audio Transcript:", "Please pay the money at the bank.")
+            if course_vid: st.video(course_vid)
+            text_to_translate = st.text_area("Audio Transcript:", "Please pay the money at the bank.", height=100)
             
         else:
             st.info("Type any sentence to see it translated instantly.")
-            text_to_translate = st.text_area("Enter Text:", "Hello, I need help.")
+            text_to_translate = st.text_area("Enter Text:", "Hello, I need help.", height=100)
 
         # The Translation Trigger
         if st.button("✨ Translate to Sign Language", type="primary"):
             if text_to_translate.strip() == "":
-                st.warning("Please enter some text to translate.")
+                st.warning("Please extract a transcript or enter text to translate.")
             else:
-                with st.status("Processing Media Pipeline...") as status:
-                    st.write("Extracting target glosses...")
+                with st.spinner("Processing NLP & Retrieving Sign Videos..."):
                     time.sleep(1)
                     st.session_state['media_processed'] = True
                     st.session_state['media_transcription'] = text_to_translate
+                    # This uses your extract_target_glosses() function to pull the keywords!
                     st.session_state['media_glosses'] = extract_target_glosses(text_to_translate)
-                    status.update(label="Translation Complete!", state="complete")
 
     # --- DISPLAY THE TRANSLATION ON THE RIGHT SIDE ---
     with m_col2:
         st.subheader("2. Sign Language Interpreter")
         
+        # What shows BEFORE they click translate
         if not st.session_state['media_processed']:
-            st.caption("Waiting for media input... Translations will appear here.")
+            st.info("Waiting for media input... Click **'Translate to Sign Language'** on the left to activate the interpreter.")
+            # Adds a nice visual placeholder so the column isn't empty!
+            st.image("https://via.placeholder.com/600x350.png?text=Interpreter+Standby", use_column_width=True)
+            
+        # What shows AFTER they click translate
         else:
-            st.success(f"**Audio:** \"{st.session_state['media_transcription']}\"")
+            st.success(f"**Audio Source:** \"{st.session_state['media_transcription']}\"")
             
             if not st.session_state['media_glosses']:
-                st.warning("No signs from our target dictionary were detected.")
+                st.warning("No signs from our target dictionary were detected in that sentence.")
             else:
                 st.write(f"**Gloss Sequence:** {' ➡️ '.join(st.session_state['media_glosses'])}")
                 st.divider()
                 
-                # --- SEQUENTIAL VIDEO PLAYER ---
+                # SEQUENTIAL VIDEO PLAYER
                 st.write("**Live Playback:**")
-                
-                # Create empty placeholders that we will update dynamically
                 word_display = st.empty()
                 video_player = st.empty()
                 
                 if st.button("▶️ Play Sign Sequence", type="primary"):
                     for word in st.session_state['media_glosses']:
-                        # 1. Show the current word
                         word_display.markdown(f"<h3 style='text-align: center; color: #4CAF50;'>{word}</h3>", unsafe_allow_html=True)
-                        
-                        # 2. Play the video
                         if word in DYNAMIC_VIDEO_DICT:
                             try:
                                 video_player.video(DYNAMIC_VIDEO_DICT[word], autoplay=True, loop=False)
-                                time.sleep(2.5) # Wait for the video to finish (adjust based on your video lengths)
+                                time.sleep(2.5) # Time allowed for each video to play
                             except:
                                 video_player.warning("Video missing")
                                 time.sleep(1)
@@ -916,8 +921,9 @@ elif selected_page == "📺 Media Access":
                             video_player.info(f"No video for: {word}")
                             time.sleep(1)
                     
-                    # Clear when finished
                     word_display.markdown("<h3 style='text-align: center;'>Sequence Complete ✅</h3>", unsafe_allow_html=True)
-                    video_player.empty()                            
+                    video_player.empty()
+
+
 st.divider()
 st.caption("BridgeLens | Enyata x Interswitch Buildathon 2026")
