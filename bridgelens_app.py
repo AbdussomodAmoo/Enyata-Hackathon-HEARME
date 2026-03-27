@@ -502,7 +502,7 @@ if selected_page == "🌍 Daily Interaction":
                     if word in DYNAMIC_VIDEO_DICT:
                         try:
                             video_player.video(DYNAMIC_VIDEO_DICT[word], autoplay=True, loop=False)
-                            time.sleep(2.5) 
+                            time.sleep(3.5) 
                         except:
                             video_player.warning("Video missing")
                             time.sleep(1)
@@ -628,7 +628,7 @@ elif selected_page == "🏥 Medical Visit":
 
         if med_input_mode == "📁 Upload Video":
             # REPO VIDEO SELECTOR ADDED HERE
-            demo_med_options = ["None (Upload instead)", "HEADACHE", "PAIN", "HEAD", "CHEST", "SICK"] # Adjust names to your actual files
+            demo_med_options = ["None (Upload instead)", "HEADACHE", "PAIN", "HEAD", "CHEST", "MEDICINE", "SICK"] # Adjust names to your actual files
             selected_med_demo = st.selectbox("Select a Demo Video from Repo:", demo_med_options)
             
             med_vid = None
