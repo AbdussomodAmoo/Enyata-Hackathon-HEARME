@@ -14,3 +14,4 @@ SpeechRecognition
 pydub
 groq
 youtube-transcript-api
+streamlit-webrtc
