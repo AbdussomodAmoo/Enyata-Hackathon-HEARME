@@ -628,7 +628,7 @@ elif selected_page == "🏥 Medical Visit":
 
         if med_input_mode == "📁 Upload Video":
             # REPO VIDEO SELECTOR ADDED HERE
-            demo_med_options = ["None (Upload instead)", "HEADACHE", "FEVER", "STOMACH ACHE", "SICK"] # Adjust names to your actual files
+            demo_med_options = ["None (Upload instead)", "HEADACHE", "PAIN", "HEAD", "CHEST", "SICK"] # Adjust names to your actual files
             selected_med_demo = st.selectbox("Select a Demo Video from Repo:", demo_med_options)
             
             med_vid = None
