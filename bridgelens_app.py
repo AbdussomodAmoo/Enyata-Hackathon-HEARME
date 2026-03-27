@@ -317,7 +317,7 @@ def predict_with_context(landmarks, active_context):
 # ==========================================
 
 # --- PAGE: DAILY INTERACTION ---
-elif selected_page == "🌍 Daily Interaction":
+if selected_page == "🌍 Daily Interaction":
     with st.sidebar:
         st.header("🌍 Daily Tools")
         st.write("✅ **Ambient Ear:** Ready")
