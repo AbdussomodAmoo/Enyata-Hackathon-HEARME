@@ -64,8 +64,8 @@ samples/: Directory containing the target sign language MP4 videos.
 
 model.p: Pre-trained Scikit-Learn RandomForest model and LabelEncoder.
 
+---
 
-**Contributions of Team Members**
 ## 👥 Team & Contributions
 
 ### AMOO ABDUSSOMOD OLADIPUPO — Team Lead & Product strategist
