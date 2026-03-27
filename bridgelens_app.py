@@ -315,8 +315,11 @@ def predict_with_context(landmarks, active_context):
         return "NONE"
 
 def get_youtube_transcript(url):
-    """Extracts the actual transcript using the updated YouTube API syntax."""
+    """Safely extracts the transcript from a YouTube video."""
     try:
+        from youtube_transcript_api import YouTubeTranscriptApi
+        from urllib.parse import urlparse, parse_qs
+        
         parsed_url = urlparse(url)
         video_id = ""
         if parsed_url.hostname == 'youtu.be':
@@ -326,14 +329,15 @@ def get_youtube_transcript(url):
                 video_id = parse_qs(parsed_url.query)['v'][0]
         
         if not video_id:
-            return "Error: Could not extract Video ID from URL."
+            return "Error: Could not extract Video ID."
 
-        # THE FIX: Instantiate the object first, then call .fetch()
-        ytt_api = YouTubeTranscriptApi()
-        transcript_list = ytt_api.fetch(video_id)
+        # The most stable way to call the API
+        transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
         
-        full_text = " ".join([segment['text'] for segment in transcript_list])
-        snippet = full_text[:200] + "..." if len(full_text) > 200 else full_text
+        # Safely extract text from the dictionaries
+        full_text = " ".join([str(segment.get('text', '')) for segment in transcript_list])
+        
+        snippet = full_text[:300] + "..." if len(full_text) > 300 else full_text
         snippet = re.sub(r'\[.*?\]', '', snippet).strip()
         
         return snippet
@@ -843,6 +847,7 @@ elif selected_page == "💳 Financial Inclusion":
                 st.button(f"🆔 {word}")
 
 # --- PAGE: MEDIA ACCESS ---
+# --- PAGE: MEDIA ACCESS ---
 elif selected_page == "📺 Media Access":
     with st.sidebar:
         st.header("📺 Content Tools")
@@ -854,20 +859,22 @@ elif selected_page == "📺 Media Access":
     
     m_col1, m_col2 = st.columns([1, 1])
     
-    # Initialize session states
     if 'media_processed' not in st.session_state:
         st.session_state['media_processed'] = False
         st.session_state['media_glosses'] = []
         st.session_state['media_transcription'] = ""
     if 'auto_transcript' not in st.session_state:
-        st.session_state['auto_transcript'] = "" # Starts empty
+        st.session_state['auto_transcript'] = "" 
+    # To prevent the infinite audio loop
+    if 'last_audio_id' not in st.session_state:
+        st.session_state['last_audio_id'] = None
     
     with m_col1:
         st.subheader("1. Media Source")
         media_source = st.radio("Select Input Method:", ["🎥 YouTube Link", "📁 Upload Video", "📝 Direct Text Input"], horizontal=True)
         
-        text_to_translate = ""
-        
+        # --- TOP SECTION: VIDEO PLAYER ---
+        yt_url = ""
         if media_source == "🎥 YouTube Link":
             yt_url = st.text_input("Paste YouTube Link:", "https://www.youtube.com/watch?v=BRvhK4ChS6E")
             if yt_url and yt_url.strip().startswith("http"):
@@ -875,82 +882,85 @@ elif selected_page == "📺 Media Access":
                     st.video(yt_url.strip())
                 except Exception:
                     st.error("Could not load video. Check the link.")
-            
-            if st.button("⬇️ Auto-Extract Real Transcript"):
+                    
+        elif media_source == "📁 Upload Video":
+            course_vid = st.file_uploader("Upload Course Video", type=["mp4", "mov"], key="course_vid")
+            if course_vid: 
+                st.video(course_vid)
+        
+        # --- MIDDLE SECTION: TRANSCRIPTION TOOLS (Right below video!) ---
+        st.write("---")
+        st.write("**Audio Extraction**")
+        
+        if media_source == "🎥 YouTube Link":
+            if st.button("⬇️ Auto-Extract YouTube Transcript", use_container_width=True):
                 if yt_url:
                     with st.spinner("Connecting to YouTube API..."):
                         real_transcript = get_youtube_transcript(yt_url)
                         st.session_state['auto_transcript'] = real_transcript
                         if "Error" not in real_transcript:
-                            st.success("Transcript Extracted Successfully!")
+                            st.success("Transcript Extracted!")
                         else:
                             st.warning(real_transcript)
                 else:
                     st.warning("Please paste a link first.")
-            
-            text_to_translate = st.text_area("Audio Transcript:", st.session_state.get('auto_transcript', ''), height=100)
-            
-        elif media_source == "📁 Upload Video":
-            course_vid = st.file_uploader("Upload Course Video", type=["mp4", "mov"], key="course_vid")
-            if course_vid: st.video(course_vid)
-            text_to_translate = st.text_area("Audio Transcript:", st.session_state.get('auto_transcript', ''), height=100)
-            
-        else:
-            st.info("Type any sentence to see it translated instantly.")
-            text_to_translate = st.text_area("Enter Text:", "Hello, I need help.", height=100)
-
-        # --- THE UNIVERSAL AUDIO LISTENER (FALLBACK) ---
-        st.divider()
-        st.subheader("🎙️ Universal Audio Listener")
-        st.caption("Missing transcript? Play the video out loud and let our AI listen.")
+                    
+        # The Universal Audio Listener sits right below the video now
+        st.caption("🎙️ Missing transcript? Play the video out loud and record it here:")
+        audio_buffer = st.audio_input("Listen to Video Audio")
         
-        audio_buffer = st.audio_input("Record Audio from Video")
-        
-        if audio_buffer:
-            with st.spinner("Transcribing via Groq Whisper AI..."):
-                import tempfile
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_audio:
-                    tmp_audio.write(audio_buffer.getvalue())
-                    tmp_audio_path = tmp_audio.name
-                
-                try:
-                    with open(tmp_audio_path, "rb") as file:
-                        transcription = groq_client.audio.transcriptions.create(
-                            file=(tmp_audio_path, file.read()),
-                            model="whisper-large-v3", # Uses Groq's lightning-fast Whisper model
-                            response_format="json",
-                            language="en",
-                            temperature=0.0
-                        )
-                        st.session_state['auto_transcript'] = transcription.text
-                        st.success("Audio transcribed successfully! Click Translate.")
-                        st.rerun() # Refreshes the page to load the text into the text box above
-                except Exception as e:
-                    st.error(f"Whisper Transcription Failed: {e}")
+        # Safe Audio Processing (No infinite loops!)
+        if audio_buffer is not None:
+            # Only process if this is a NEW audio recording
+            if st.session_state['last_audio_id'] != audio_buffer.id:
+                with st.spinner("Transcribing via Groq Whisper AI..."):
+                    import tempfile
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_audio:
+                        tmp_audio.write(audio_buffer.getvalue())
+                        tmp_audio_path = tmp_audio.name
+                    
+                    try:
+                        with open(tmp_audio_path, "rb") as file:
+                            transcription = groq_client.audio.transcriptions.create(
+                                file=(tmp_audio_path, file.read()),
+                                model="whisper-large-v3", 
+                                response_format="json",
+                                language="en",
+                                temperature=0.0
+                            )
+                            st.session_state['auto_transcript'] = transcription.text
+                            # Save the ID so we don't process this exact recording again
+                            st.session_state['last_audio_id'] = audio_buffer.id 
+                            st.success("Audio transcribed successfully!")
+                    except Exception as e:
+                        st.error(f"Whisper Transcription Failed: {e}")
 
-        # The Translation Trigger
-        st.divider()
-        if st.button("✨ Translate to Sign Language", type="primary"):
+        # --- BOTTOM SECTION: TEXT & TRANSLATION ---
+        # The text area automatically picks up whatever is in st.session_state['auto_transcript']
+        text_to_translate = st.text_area(
+            "Final Text to Translate:", 
+            value=st.session_state.get('auto_transcript', ''), 
+            height=100
+        )
+
+        if st.button("✨ Translate to Sign Language", type="primary", use_container_width=True):
             if text_to_translate.strip() == "":
-                st.warning("Please extract a transcript, record audio, or enter text to translate.")
+                st.warning("Please extract a transcript, record audio, or enter text.")
             else:
                 with st.spinner("Processing NLP & Retrieving Sign Videos..."):
                     time.sleep(1)
                     st.session_state['media_processed'] = True
                     st.session_state['media_transcription'] = text_to_translate
                     st.session_state['media_glosses'] = extract_target_glosses(text_to_translate)
-                    
+
     # --- DISPLAY THE TRANSLATION ON THE RIGHT SIDE ---
     with m_col2:
         st.subheader("2. Sign Language Interpreter")
         
-        # What shows BEFORE they click translate
         if not st.session_state['media_processed']:
-            st.info("Waiting for media input... Click **'Translate to Sign Language'** on the left to activate the interpreter.")
-            # Adds a nice visual placeholder so the column isn't empty!
+            st.info("Waiting for media input... Click **'Translate to Sign Language'** on the left.")
             st.image("https://via.placeholder.com/600x350.png?text=Interpreter+Standby", use_column_width=True)
             
-        # What shows AFTER they click translate
         else:
             st.success(f"**Audio Source:** \"{st.session_state['media_transcription']}\"")
             
@@ -960,7 +970,6 @@ elif selected_page == "📺 Media Access":
                 st.write(f"**Gloss Sequence:** {' ➡️ '.join(st.session_state['media_glosses'])}")
                 st.divider()
                 
-                # SEQUENTIAL VIDEO PLAYER
                 st.write("**Live Playback:**")
                 word_display = st.empty()
                 video_player = st.empty()
@@ -971,7 +980,7 @@ elif selected_page == "📺 Media Access":
                         if word in DYNAMIC_VIDEO_DICT:
                             try:
                                 video_player.video(DYNAMIC_VIDEO_DICT[word], autoplay=True, loop=False)
-                                time.sleep(2.5) # Time allowed for each video to play
+                                time.sleep(2.5) 
                             except:
                                 video_player.warning("Video missing")
                                 time.sleep(1)
@@ -981,7 +990,6 @@ elif selected_page == "📺 Media Access":
                     
                     word_display.markdown("<h3 style='text-align: center;'>Sequence Complete ✅</h3>", unsafe_allow_html=True)
                     video_player.empty()
-
 
 st.divider()
 st.caption("BridgeLens | Enyata x Interswitch Buildathon 2026")
