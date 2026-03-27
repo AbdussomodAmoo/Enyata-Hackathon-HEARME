@@ -14,7 +14,8 @@ import os
 from groq import Groq
 import requests
 import re
-
+from youtube_transcript_api import YouTubeTranscriptApi
+from urllib.parse import urlparse, parse_qs
 
 
 # --- INITIAL SETUP ---
@@ -312,6 +313,38 @@ def predict_with_context(landmarks, active_context):
         return best_word
     else:
         return "NONE"
+
+def get_youtube_transcript(url):
+    """Extracts the actual transcript from a YouTube video."""
+    try:
+        # 1. Extract the Video ID from the URL
+        parsed_url = urlparse(url)
+        video_id = ""
+        if parsed_url.hostname == 'youtu.be':
+            video_id = parsed_url.path[1:]
+        if parsed_url.hostname in ('www.youtube.com', 'youtube.com'):
+            if parsed_url.path == '/watch':
+                video_id = parse_qs(parsed_url.query)['v'][0]
+        
+        if not video_id:
+            return "Error: Could not extract Video ID from URL."
+
+        # 2. Fetch the transcript using the API
+        transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
+        
+        # 3. Combine the text segments (limiting to the first 5-6 sentences for a quick demo)
+        full_text = " ".join([segment['text'] for segment in transcript_list])
+        
+        # Grab a reasonable chunk (e.g., first 200 characters) to keep the demo snappy
+        snippet = full_text[:200] + "..." if len(full_text) > 200 else full_text
+        
+        # Clean up common YouTube transcript artifacts (like "[Music]")
+        snippet = re.sub(r'\[.*?\]', '', snippet).strip()
+        
+        return snippet
+
+    except Exception as e:
+        return f"Error: Could not retrieve transcript. (Make sure the video has closed captions enabled). Details: {str(e)}"
 
 # ==========================================
 # --- 2. PAGE ROUTING LOGIC ---
@@ -841,26 +874,27 @@ elif selected_page == "📺 Media Access":
         text_to_translate = ""
         
         if media_source == "🎥 YouTube Link":
-            # Keeping your exact video!
-            yt_url = st.text_input("Paste YouTube Link:", "https://www.youtube.com/watch?v=BRvhK4ChS6E&list=PPSV")
+            yt_url = st.text_input("Paste YouTube Link:", "https://www.youtube.com/watch?v=BRvhK4ChS6E")
             if yt_url and yt_url.strip().startswith("http"):
                 try:
                     st.video(yt_url.strip())
                 except Exception:
                     st.error("Could not load video. Check the link.")
             
-            # --- THE AUTO-EXTRACT BUTTON ---
-            if st.button("⬇️ Auto-Extract YouTube Transcript"):
-                with st.spinner("Connecting to YouTube Closed Captions API..."):
-                    time.sleep(1.5)
-                    # If it's your specific video, pull the exact quote from 00:30:44!
-                    if "BRvhK4ChS6E" in yt_url:
-                        st.session_state['auto_transcript'] = "We need food and water for the men, and medicine for the baby."
-                    else:
-                        st.session_state['auto_transcript'] = "Hello, please I need help with my bank account."
-                    st.success("Transcript Extracted Successfully!")
+            # --- THE REAL AUTO-EXTRACT BUTTON ---
+            if st.button("⬇️ Auto-Extract Real Transcript"):
+                if yt_url:
+                    with st.spinner("Connecting to YouTube API..."):
+                        real_transcript = get_youtube_transcript(yt_url)
+                        st.session_state['auto_transcript'] = real_transcript
+                        if "Error" not in real_transcript:
+                            st.success("Transcript Extracted Successfully!")
+                        else:
+                            st.warning(real_transcript)
+                else:
+                    st.warning("Please paste a link first.")
             
-            text_to_translate = st.text_area("Audio Transcript:", st.session_state['auto_transcript'], height=100)
+            text_to_translate = st.text_area("Audio Transcript:", st.session_state.get('auto_transcript', ''), height=100)
             
         elif media_source == "📁 Upload Video":
             course_vid = st.file_uploader("Upload Course Video", type=["mp4", "mov"], key="course_vid")
