@@ -411,25 +411,6 @@ def get_youtube_transcript(url):
     except Exception as e:
         return f"Error: Ensure the video has available transcripts. Details: {e}"
 
-# --- WEBRTC LIVE SKELETON TRANSFORMER ---
-class SkeletonTransformer(VideoTransformerBase):
-    def __init__(self):
-        self.holistic = mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5)
-        
-    def recv(self, frame):
-        img = frame.to_ndarray(format="bgr24")
-        
-        # Process MediaPipe
-        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        results = self.holistic.process(img_rgb)
-        
-        # Draw Skeleton Live!
-        mp_drawing.draw_landmarks(img, results.pose_landmarks, mp_holistic.POSE_CONNECTIONS)
-        mp_drawing.draw_landmarks(img, results.left_hand_landmarks, mp_holistic.HAND_CONNECTIONS)
-        mp_drawing.draw_landmarks(img, results.right_hand_landmarks, mp_holistic.HAND_CONNECTIONS)
-        
-        return av.VideoFrame.from_ndarray(img, format="bgr24")
-
 
 # ==========================================
 # --- 2. PAGE ROUTING LOGIC ---
