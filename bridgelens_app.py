@@ -106,7 +106,7 @@ Rules:
 Glosses to translate: {sign_gloss_text}"""
 
         response = groq_client.chat.completions.create(
-            model="llama3-8b-8192",
+            model="llama-3.1-8b-instant",
             messages=[
                 {"role": "system", "content": f"You are a fluent {target_lang} speaker and native sign language interpreter."},
                 {"role": "user", "content": prompt}
@@ -137,7 +137,7 @@ Example: If Yoruba is 'Bawo ni', output 'HOW ARE YOU' or 'HELLO'.
 Gloss sequence:"""
 
         response = groq_client.chat.completions.create(
-            model="llama3-8b-8192",
+            model="llama-3.1-8b-instant",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.0,
             max_tokens=50
@@ -528,7 +528,20 @@ if selected_page == "🌍 Daily Interaction":
         st.divider()
         st.write("**Execute Translation**")        
         # We use file uploader for the hackathon demo to ensure stable execution on stage
-        daily_vid = st.file_uploader("Upload Sign Sequence (.mp4)", type=["mp4", "mov"], key="daily_vid")
+        # Let judges select a pre-loaded video from your repo for a flawless demo
+        demo_options = ["None (Upload instead)", "HELLO", "AIRPLANE", "DOCTOR", "THANK YOU"] # Update these to match your actual files!
+        selected_demo = st.selectbox("Select a Demo Video from Repo:", demo_options)
+        
+        daily_vid = None
+        if selected_demo != "None (Upload instead)":
+            # Assuming your videos are stored in a 'samples' folder and named like 'HELLO.mp4'
+            try:
+                file_path = f"samples/{selected_demo.replace(' ', '_')}.mp4"
+                daily_vid = open(file_path, "rb")
+            except FileNotFoundError:
+                st.error(f"Could not find video at {file_path}")
+        else:
+            daily_vid = st.file_uploader("Or Upload Sign Sequence (.mp4)", type=["mp4", "mov"], key="daily_vid")
         
         if st.button("Translate Sign to Speech", type="primary", use_container_width=True):
             if daily_vid:
