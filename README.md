@@ -38,32 +38,6 @@ The world is designed for the hearing. Deaf individuals face compounding barrier
 * **Audio Processing:** SpeechRecognition API, gTTS.
 * **Financial Infrastructure:** Interswitch API Marketplace & QuickTeller Business Sandbox.
 
-## 🚀 How to Run Locally
-
-**1. Clone the repository**
-```bash
-git clone [https://github.com/yourusername/bridgelens.git](https://github.com/yourusername/bridgelens.git)
-cd bridgelens
-
-TO Install Dependencies
-pip install -r requirements.txt
-
-Groq API key to test features (for JUDGES)
-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
-
-or you may generate yours and insert it in
-export GROQ_API_KEY="your_api_key_here"
-
-To run the Application:
-streamlit run bridgelens_app.py
-
-📂 Project Structure
-bridgelens_app.py: Main application logic and UI routing.
-
-samples/: Directory containing the target sign language MP4 videos.
-
-model.p: Pre-trained Scikit-Learn RandomForest model and LabelEncoder.
-
 ---
 
 ## 👥 Team & Contributions
@@ -78,3 +52,30 @@ model.p: Pre-trained Scikit-Learn RandomForest model and LabelEncoder.
 ### BASIT ABDULSALAM — AI Engineer & Domain Researcher
 - **AI/ML Engineering:** Developed the MediaPipe landmark extraction pipeline and trained the sign language recognition models (Random Forest).
 - **Domain Research:** Conducted research on the Sign Language landscape and identified high-impact vocabulary for the Medical and Fintech tabs.
+
+## 🚀 How to Run Locally
+
+**1. Clone the repository**
+```bash
+git clone [https://github.com/yourusername/bridgelens.git](https://github.com/yourusername/bridgelens.git)
+cd bridgelens
+
+TO Install Dependencies
+pip install -r requirements.txt
+
+Groq API key to test features (for JUDGES)
+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
+
+or you may generate yours and insert it in
+export GROQ_API_KEY="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"
+
+To run the Application:
+streamlit run bridgelens_app.py
+
+📂 Project Structure
+bridgelens_app.py: Main application logic and UI routing.
+
+samples/: Directory containing the target sign language MP4 videos.
+
+model.p: Pre-trained Scikit-Learn RandomForest model and LabelEncoder.
+
