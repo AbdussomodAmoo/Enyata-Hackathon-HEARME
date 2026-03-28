@@ -30,7 +30,26 @@ The world is designed for the hearing. Deaf individuals face compounding barrier
 * **Synchronized Interpretation:** Extracts target glosses from the audio and plays side-by-side sign language videos, making any raw video accessible instantly.
 
 ---
+## 🎯 Judge's Testing Guide (Quick Walkthrough)
+To experience the core features of BridgeLens without needing to upload your own files or speak into the microphone, please follow this "Golden Path" walkthrough:
 
+**1. 🏥 Medical Visit (Two-Way Clinical Bridge)**
+* **Patient to Doctor:** Under *Patient Input*, use the "Select a Demo Video from Repo" dropdown and choose a pre-loaded video (e.g., `HEADACHE`, `SICK`, or `MEDICINE`). Click **"Translate Symptoms to Doctor"**. Watch the AI extract the gesture using temporal majority-voting and auto-log it to the patient's chart.
+* **Doctor to Patient:** Under *Doctor's Dashboard*, type a response into the input box (e.g., "TAKE MEDICINE") and click **"Translate to Sign Language"**. Finally, click **"Play Diagnosis Sequence"** to see the words translated into direct, sequential sign language videos.
+
+**2. 🌍 Daily Interaction (Context AI)**
+* **Context Restrictions:** Toggle the Environment Quick-Keys at the top (General, Coffee Shop, Transit). Notice how this dynamically restricts the Edge AI's vocabulary based on real-world locations to prevent hallucinations.
+* **Speak to the World:** Under *3. Speak to the World*, select a demo video like `AIRPLANE` or `THANK YOU` from the dropdown and click **"Translate Sign to Speech"** to see the skeletal tracking and Indigenous Language translation in action.
+
+**3. 📺 Media Access (Universal Listener)**
+* Navigate to the **Media Access** tab.
+* In the *Text to Sign Translation* box, type a sequence using available vocabulary (e.g., "HELLO DOCTOR").
+* Click **"Prepare Sign Language Track"** and then **"Start Live Interpretation"** to watch the signs dynamically queue and play sequentially on the screen.
+
+**4. 💳 Financial Inclusion (Interswitch Sandbox)**
+* Navigate to the **Financial Inclusion** tab.
+* Explore the dropdown actions to see our Interswitch integrations, including **Branchless KYC** (Identity Rails API), **Trust Shield verification** (Account Name Verification API), and our **Visual VAS Error Handler** (Translating cryptic API errors like "HTTP 402" into visual "NO MONEY" signs).
+---
 ## 🛠️ Technical Architecture
 * **Frontend:** Streamlit (Python)
 * **Computer Vision (Edge):** OpenCV, MediaPipe Holistic (Pose & Hand tracking), Scikit-Learn (RandomForest Classifier).
