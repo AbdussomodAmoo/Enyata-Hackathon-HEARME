@@ -536,6 +536,8 @@ if selected_page == "🌍 Daily Interaction":
                 st.error(f"Could not find video at {file_path}")
         else:
             daily_vid = st.file_uploader("Or Upload Sign Sequence (.mp4)", type=["mp4", "mov"], key="daily_vid")
+            if daily_vid:
+                st.video(daily_vid)
         
         if st.button("Translate Sign to Speech", type="primary", use_container_width=True):
             if daily_vid:
