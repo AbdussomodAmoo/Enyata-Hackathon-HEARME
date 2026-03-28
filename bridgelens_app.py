@@ -955,10 +955,26 @@ elif selected_page == "💳 Financial Inclusion":
         if st.session_state['vas_error_signs']:
             st.write("---")
             st.error("⚠️ Visual Error Translation")
-            for word in st.session_state['vas_error_signs']:
-                st.write(f"**{word}**")
-                # Ensure you define DYNAMIC_VIDEO_DICT or replace with appropriate placeholder
-                st.button(f"🆔 {word}")
+            
+            word_display = st.empty()
+            video_player = st.empty()
+            
+            if st.button("▶️ Play Error Translation", type="primary", use_container_width=True):
+                for word in st.session_state['vas_error_signs']:
+                    word_display.markdown(f"<h3 style='text-align: center; color: #d32f2f;'>{word}</h3>", unsafe_allow_html=True)
+                    if word in DYNAMIC_VIDEO_DICT:
+                        try:
+                            video_player.video(DYNAMIC_VIDEO_DICT[word], autoplay=True, loop=False)
+                            time.sleep(2.5) 
+                        except:
+                            video_player.warning(f"Video missing for {word}")
+                            time.sleep(1)
+                    else:
+                        video_player.info(f"No video for: {word}")
+                        time.sleep(1)
+                
+                word_display.markdown("<h3 style='text-align: center;'>Translation Complete ✅</h3>", unsafe_allow_html=True)
+                video_player.empty()
 
 # --- PAGE: MEDIA ACCESS ---
 elif selected_page == "📺 Media Access":
