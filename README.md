@@ -31,7 +31,7 @@ The world is designed for the hearing. Deaf individuals face compounding barrier
 
 ---
 ## 🎯 Judge's Testing Guide (Quick Walkthrough)
-To experience the core features of BridgeLens without needing to upload your own files or speak into the microphone, please follow this "Golden Path" walkthrough:
+To experience the core features of BridgeLens without needing to upload your own files, please follow this walkthrough. First copy this groq api key: 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
 
 **1. 🏥 Medical Visit (Two-Way Clinical Bridge)**
 * **Patient to Doctor:** Under *Patient Input*, use the "Select a Demo Video from Repo" dropdown and choose a pre-loaded video (e.g., `HEADACHE`, `SICK`, or `MEDICINE`). Click **"Translate Symptoms to Doctor"**. Watch the AI extract the gesture using temporal majority-voting and auto-log it to the patient's chart.
