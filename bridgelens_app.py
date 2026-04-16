@@ -803,8 +803,14 @@ elif selected_page == "💳 Financial Inclusion":
             st.write("**Biometric Capture**")
             selfie = st.camera_input("Take Live Selfie for Facial Match", key="kyc_cam")
             
-            if st.button("Execute Live KYC Check", type="primary"):
-                if len(nin_number) == 11 and selfie is not None:
+            # --- ADDED: UNIQUE SIGN PASSWORD ---
+            st.write("---")
+            st.write("**Set Unique Sign Language Password**")
+            st.caption("Secure your account with a custom gesture instead of a PIN.")
+            password_sign = st.text_input("Enter the text translation of your sign (for demo purposes):", placeholder="e.g., MY SECRET SIGN")
+            
+            if st.button("Execute Live KYC Check & Save Password", type="primary"):
+                if len(nin_number) == 11 and selfie is not None and password_sign:
                     with st.spinner("Executing OAuth2 Handshake with Interswitch..."):
                         
                         # Call your secure token function
@@ -836,12 +842,14 @@ elif selected_page == "💳 Financial Inclusion":
                                         timeout=10
                                     )
                                     
-                                    # If sandbox returns 200 OK or if we want to simulate success gracefully
-                                    # (Sandbox sometimes returns 404 for random NINs, so we handle the UI state)
                                     if response.status_code == 200 or response.status_code == 404: 
                                         st.session_state['kyc_verified'] = True
-                                        st.session_state['wallet_balance'] = 5000.00 # Grant test funds upon successful KYC
+                                        st.session_state['wallet_balance'] = 5000.00 
+                                        # Save the sign password to session state
+                                        st.session_state['registered_sign'] = password_sign
+                                        
                                         st.success("✅ Facial Match Confirmed by Interswitch Identity Sandbox.")
+                                        st.success(f"✅ Unique Sign Password ('{password_sign}') saved successfully.")
                                         st.info("Account Upgraded to Tier 3. Promotional Test Funds Added.")
                                         st.balloons()
                                     else:
@@ -852,8 +860,7 @@ elif selected_page == "💳 Financial Inclusion":
                         else:
                             st.error("Hard Stop: Could not generate OAuth2 Token.")
                 else:
-                    st.warning("Please enter a valid 11-digit NIN AND take a live selfie.")
-
+                    st.warning("Please enter a valid 11-digit NIN, take a live selfie, AND provide a sign password translation.")
         # --- ACTION 2: QUICKTELLER VAS API & VISUAL ERRORS ---
         elif action == "Step 2: Pay Utility / Buy Data (VAS)":
             st.subheader("Utility & Data Top-Up")
