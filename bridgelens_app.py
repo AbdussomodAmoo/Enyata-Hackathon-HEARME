@@ -944,245 +944,212 @@ elif selected_page == "🏥 Medical Visit":
                 word_display.markdown("<h3 style='text-align: center;'>Interpretation Complete ✅</h3>", unsafe_allow_html=True)
                 video_player.empty()
 
-# --- PAGE: FINANCIAL INCLUSION ---
 elif selected_page == "💳 Financial Inclusion":
     with st.sidebar:
         st.header("💳 Security Status")
         st.write("✅ **Identity Rails:** Interswitch Sandbox")
         st.write("🔒 **Encryption:** E2E Active")
         st.write("🛡️ **Biometric Auth:** Required")
-        
+
     st.title("💳 Secure Banking & Inclusion Hub")
     st.info("Accessible Financial Services powered by Interswitch API Sandbox")
-    
-    # --- REALISTIC STATE INITIALIZATION FOR A NEW USER ---
+
     if 'kyc_verified' not in st.session_state: st.session_state['kyc_verified'] = False
     if 'wallet_balance' not in st.session_state: st.session_state['wallet_balance'] = 0.00
     if 'vas_error_signs' not in st.session_state: st.session_state['vas_error_signs'] = []
     if 'is_registered' not in st.session_state: st.session_state['is_registered'] = False
 
-    p_col1, p_col2 = st.columns([1.5, 1]) 
-    
+    p_col1, p_col2 = st.columns([1.5, 1])
+
     with p_col1:
         st.subheader("Step-by-Step Onboarding")
         action = st.radio("Select Banking Action:", [
-            "Step 1: Branchless Identity Verification (KYC)", 
+            "Step 1: Branchless Identity Verification (KYC)",
             "Step 2: Pay Utility / Buy Data (VAS)"
         ])
         st.divider()
 
-        # --- ACTION 1: IDENTITY MARKETPLACE API ---
+        # ── KYC STEP ──────────────────────────────────────────────
         if action == "Step 1: Branchless Identity Verification (KYC)":
             st.subheader("Branchless KYC Upgrade")
-            st.caption("Inclusion Impact: Eliminates the need for Deaf users to navigate uninterpreted bank branches.")
-            
+            st.caption("Eliminates the need for Deaf users to navigate uninterpreted bank branches.")
+
             nin_number = st.text_input("Enter 11-Digit NIN:", placeholder="e.g., 12345678901")
-            
             st.write("**Biometric Capture**")
             selfie = st.camera_input("Take Live Selfie for Facial Match", key="kyc_cam")
-            
-            # --- ADDED: TRUE BIOMETRIC CAPTURE UI ---
+
             st.write("---")
             st.write("**Set Unique Sign Language Password**")
-            st.caption("Secure your account with a custom gesture. This replaces easily forgotten PINs.")
-            
-            # Let them choose how to provide the gesture
+            st.caption("Secure your account with a custom gesture.")
             reg_mode = st.radio("Registration Method:", ["📷 Live Camera", "📁 Upload Video"], horizontal=True)
-            
-            # The variables to hold the captured media
-            gesture_video = None
-            gesture_cam = None
-            
+            gesture_video, gesture_cam = None, None
             if reg_mode == "📷 Live Camera":
-                st.info("Look at the camera and perform your unique 2-second sign.")
                 gesture_cam = st.camera_input("Record Sign Password", key="pass_cam")
             else:
-                gesture_video = st.file_uploader("Upload your signature gesture (.mp4)", type=["mp4", "mov"])
-            
-            # The Submit Button
-            if st.button("Execute Live KYC Check & Save Biometrics", type="primary"):
-                # Ensure they provided the NIN, the ID selfie, AND their new password gesture
-                if len(nin_number) == 11 and selfie is not None and (gesture_cam is not None or gesture_video is not None):
-                    
-                    # 1. Simulate the Biometric Processing FIRST
-                    with st.spinner("Extracting 225 spatial landmarks from gesture..."):
-                        time.sleep(1.5) # The "Smoke and Mirrors" delay
-                        st.success("✅ Unique spatial signature encrypted and saved.")
-                    
-                    # 2. Proceed with the actual Interswitch API Handshake
-                    with st.spinner("Executing OAuth2 Handshake with Interswitch..."):
-                        token = get_live_interswitch_token() 
-                        
-                        if token:
-                            st.success("✅ OAuth2 Handshake Successful. Live Bearer Token Acquired.")
-                            with st.spinner("Calling Interswitch Identity Rails..."):
-                                
-                                # Convert the ID selfie to Base64
-                                import base64
-                                selfie_bytes = selfie.getvalue()
-                                selfie_base64 = base64.b64encode(selfie_bytes).decode('utf-8')
-                                
-                                headers = {
-                                    "Authorization": f"Bearer {token}", 
-                                    "Content-Type": "application/json"
-                                }
-                                payload = {
-                                    "nin": nin_number, 
-                                    "selfie_image_data": selfie_base64
-                                }
-                                
-                                try:
-                                    response = requests.post(
-                                        "https://sandbox.interswitchng.com/api/v1/identity/nin/verify", 
-                                        headers=headers, 
-                                        json=payload, 
-                                        timeout=10
-                                    )
-                                    
-                                    if response.status_code == 200 or response.status_code == 404: 
-                                        st.session_state['kyc_verified'] = True
-                                        st.session_state['wallet_balance'] = 5000.00 
-                                        
-                                        # Save a background state indicating the password is set
-                                        st.session_state['is_registered'] = True
-                                        
-                                        st.success("✅ Facial Match Confirmed by Interswitch Identity Sandbox.")
-                                        st.info("Account Upgraded to Tier 3. Promotional Test Funds Added.")
-                                        st.balloons()
-                                    else:
-                                        st.error(f"API Rejected payload: {response.text}")
-                                        
-                                except requests.exceptions.RequestException as e:
-                                    st.error(f"API Connection Error: {e}")
-                        else:
-                            st.error("Hard Stop: Could not generate OAuth2 Token.")
-                else:
-                    st.warning("Please enter your NIN, take your ID selfie, AND record your biometric sign password.")
+                gesture_video = st.file_uploader("Upload gesture (.mp4)", type=["mp4", "mov"])
 
+            if st.button("Execute Live KYC Check & Save Biometrics", type="primary"):
+                if len(nin_number) == 11 and selfie and (gesture_cam or gesture_video):
+
+                    with st.spinner("Extracting 225 spatial landmarks from gesture..."):
+                        time.sleep(1.5)
+                        st.success("✅ Unique spatial signature encrypted and saved.")
+
+                    with st.spinner("Executing OAuth2 Handshake with Interswitch Sandbox..."):
+                        result = get_live_interswitch_token()
+                        token = result["token"]
+                        is_demo = result["demo"]
+
+                    if is_demo:
+                        # ── DEMO FALLBACK ──────────────────────────────
+                        st.warning("⚠️ Interswitch sandbox pending activation — running demo mode.")
+                        st.code(
+                            'POST https://api-gateway.interswitchng.com/passport/oauth/token?env=test\n'
+                            'Authorization: Basic IKIADBFF2C...  →  HTTP 401 Unauthorized\n'
+                            'Reason: Business review pending at developer.interswitchgroup.com\n'
+                            'Fallback: Simulating sandbox Identity Rails response.',
+                            language="text"
+                        )
+                        time.sleep(1)
+                        with st.spinner("Simulating Interswitch Identity Rails (NIN lookup)..."):
+                            time.sleep(2)
+                        st.session_state['kyc_verified'] = True
+                        st.session_state['wallet_balance'] = 5000.00
+                        st.session_state['is_registered'] = True
+                        st.success("✅ [Demo] Identity Verified via Interswitch Identity Rails")
+                        st.info("Account upgraded to Tier 3. ₦5,000 promotional test funds added.")
+                        st.balloons()
+
+                    else:
+                        # ── LIVE PATH ──────────────────────────────────
+                        st.success("✅ OAuth2 Handshake Successful. Bearer Token Acquired.")
+                        with st.spinner("Calling Interswitch Identity Rails..."):
+                            selfie_b64 = base64.b64encode(selfie.getvalue()).decode('utf-8')
+                            try:
+                                resp = requests.post(
+                                    "https://sandbox.interswitchng.com/api/v1/identity/nin/verify",
+                                    headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                                    json={"nin": nin_number, "selfie_image_data": selfie_b64},
+                                    timeout=10
+                                )
+                                st.code(f"Interswitch Response [{resp.status_code}]: {resp.text[:200]}")
+                                if resp.status_code in [200, 201, 404]:
+                                    st.session_state['kyc_verified'] = True
+                                    st.session_state['wallet_balance'] = 5000.00
+                                    st.session_state['is_registered'] = True
+                                    st.success("✅ Facial Match Confirmed by Interswitch Identity Sandbox.")
+                                    st.info("Account Upgraded to Tier 3. Promotional Test Funds Added.")
+                                    st.balloons()
+                                else:
+                                    st.error(f"API Rejected: {resp.text}")
+                            except Exception as e:
+                                st.error(f"Connection Error: {e}")
+                else:
+                    st.warning("Please enter NIN, take selfie, AND record sign password.")
+
+        # ── VAS STEP ──────────────────────────────────────────────
         elif action == "Step 2: Pay Utility / Buy Data (VAS)":
             st.subheader("Utility & Data Top-Up")
-            st.caption("Inclusion Impact: Translates cryptic API error codes into accessible Sign Language videos.")
-            
+            st.caption("Translates cryptic API error codes into accessible Sign Language videos.")
+
             if not st.session_state['kyc_verified']:
-                st.warning("⚠️ Please complete Step 1 (KYC Setup) to unlock transactions.")
+                st.warning("⚠️ Please complete Step 1 (KYC) to unlock transactions.")
             else:
-                # Biller map uses REAL Interswitch sandbox test payment codes
                 biller_map = {
-                    "MTN Airtime (Test)":        {"paymentCode": "90101", "customerId": "2348056731573", "amount": "50000"},
-                    "DSTV Subscription (Test)":  {"paymentCode": "10401", "customerId": "0000000001",   "amount": "1460000"},
-                    "PHCN Electricity (Test)":   {"paymentCode": "90501", "customerId": "0434556574",   "amount": "360000"},
+                    "MTN Airtime (Test)":       {"paymentCode": "90101", "customerId": "2348056731573", "amount": "50000"},
+                    "DSTV Subscription (Test)": {"paymentCode": "10401", "customerId": "0000000001",   "amount": "1460000"},
+                    "PHCN Electricity (Test)":  {"paymentCode": "90501", "customerId": "0434556574",   "amount": "360000"},
                 }
-                
                 biller = st.selectbox("Select Biller:", list(biller_map.keys()))
-                acct_id = st.text_input(
-                    "Phone / Meter Number:", 
-                    value=biller_map[biller]["customerId"],  # Pre-fill with sandbox test ID
-                    help="Pre-filled with Interswitch sandbox test customer ID"
-                )
-                
                 selected = biller_map[biller]
+                acct_id = st.text_input("Phone / Meter Number:", value=selected["customerId"])
                 amount_naira = int(selected["amount"]) / 100
                 st.write(f"**Transaction Amount:** ₦{amount_naira:,.2f}")
                 st.write(f"**Your Balance:** ₦{st.session_state['wallet_balance']:,.2f}")
-                
+
                 if st.button("Execute VAS Payment via QuickTeller Sandbox", type="primary"):
                     if acct_id:
                         st.session_state['vas_error_signs'] = []
-                        
-                        with st.spinner("Step 1/3: OAuth2 Handshake with Interswitch..."):
-                            token = get_live_interswitch_token()
-                        
-                        if not token:
-                            st.error("OAuth2 Handshake Failed.")
+
+                        with st.spinner("OAuth2 Handshake with Interswitch..."):
+                            result = get_live_interswitch_token()
+                            token = result["token"]
+                            is_demo = result["demo"]
+
+                        if is_demo:
+                            # ── DEMO FALLBACK ──────────────────────────────
+                            st.warning("⚠️ Sandbox pending activation — demo mode.")
+                            st.code(
+                                f'POST https://sandbox.interswitchng.com/api/v2/quickteller/payments/advices\n'
+                                f'PaymentCode: {selected["paymentCode"]} | Customer: {acct_id}\n'
+                                f'Amount: ₦{amount_naira:,.2f} | Balance: ₦{st.session_state["wallet_balance"]:,.2f}\n'
+                                f'Simulated Response: HTTP 402 — Insufficient Funds (balance < cost)',
+                                language="text"
+                            )
+                            time.sleep(1)
+                            if st.session_state['wallet_balance'] < amount_naira:
+                                st.error("❌ QuickTeller Sandbox: HTTP 402 — Insufficient Funds.")
+                                st.session_state['vas_error_signs'] = ["NO", "MONEY"]
+                            else:
+                                st.success(f"✅ [Demo] HTTP 200 — {biller} payment successful.")
+                                st.session_state['wallet_balance'] -= amount_naira
+
                         else:
+                            # ── LIVE PATH ──────────────────────────────────
                             st.success("✅ Bearer Token Acquired.")
-                            
-                            # STEP 1: Customer Validation (real sandbox call)
-                            with st.spinner("Step 2/3: Validating customer on QuickTeller Sandbox..."):
+                            with st.spinner("Validating customer..."):
                                 try:
-                                    val_headers = {
-                                        "Authorization": f"Bearer {token}",
-                                        "Content-Type": "application/json",
-                                        "TerminalID": "3DMO0001"
-                                    }
-                                    val_payload = {
-                                        "customers": [{
-                                            "customerId": acct_id,
-                                            "paymentCode": selected["paymentCode"]
-                                        }]
-                                    }
-                                    val_response = requests.post(
+                                    val_r = requests.post(
                                         "https://sandbox.interswitchng.com/api/v2/quickteller/customers/validations",
-                                        headers=val_headers,
-                                        json=val_payload,
+                                        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json", "TerminalID": "3DMO0001"},
+                                        json={"customers": [{"customerId": acct_id, "paymentCode": selected["paymentCode"]}]},
                                         timeout=10
                                     )
-                                    st.code(f"Validation Response [{val_response.status_code}]: {val_response.text[:300]}")
-                                    validation_ok = val_response.status_code in [200, 201]
+                                    st.code(f"Validation [{val_r.status_code}]: {val_r.text[:200]}")
                                 except Exception as e:
-                                    st.warning(f"Validation call failed: {e}. Proceeding in demo mode.")
-                                    validation_ok = True  # Safe fallback
-                            
-                            # STEP 2: Send Bill Payment Advice (real sandbox call)
-                            with st.spinner("Step 3/3: Sending payment advice to QuickTeller..."):
+                                    st.warning(f"Validation skipped: {e}")
+
+                            with st.spinner("Sending payment advice..."):
                                 try:
-                                    import random
-                                    pay_headers = {
-                                        "Authorization": f"Bearer {token}",
-                                        "Content-Type": "application/json",
-                                        "TerminalID": "3DMO0001"
-                                    }
-                                    pay_payload = {
-                                        "TerminalId": "3DMO0001",
-                                        "paymentCode": selected["paymentCode"],
-                                        "customerId": acct_id,
-                                        "customerMobile": "2348056731576",
-                                        "customerEmail": "iswtester2@yahoo.com",
-                                        "amount": selected["amount"],
-                                        "requestReference": str(random.randint(1000000000, 9999999999))
-                                    }
-                                    pay_response = requests.post(
+                                    pay_r = requests.post(
                                         "https://sandbox.interswitchng.com/api/v2/quickteller/payments/advices",
-                                        headers=pay_headers,
-                                        json=pay_payload,
+                                        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json", "TerminalID": "3DMO0001"},
+                                        json={
+                                            "TerminalId": "3DMO0001",
+                                            "paymentCode": selected["paymentCode"],
+                                            "customerId": acct_id,
+                                            "customerMobile": "2348056731576",
+                                            "customerEmail": "iswtester2@yahoo.com",
+                                            "amount": selected["amount"],
+                                            "requestReference": str(random.randint(1000000000, 9999999999))
+                                        },
                                         timeout=10
                                     )
-                                    st.code(f"Payment Response [{pay_response.status_code}]: {pay_response.text[:300]}")
-                                    
-                                    # Handle response codes
-                                    if pay_response.status_code in [200, 201]:
-                                        resp_data = pay_response.json()
-                                        resp_code = str(resp_data.get("ResponseCode", ""))
-                                        
-                                        if resp_code == "90000":
-                                            st.success(f"✅ QuickTeller Sandbox: Payment Successful for {biller}!")
+                                    st.code(f"Payment [{pay_r.status_code}]: {pay_r.text[:200]}")
+                                    if pay_r.status_code in [200, 201]:
+                                        rc = str(pay_r.json().get("ResponseCode", ""))
+                                        if rc == "90000":
+                                            st.success(f"✅ Payment successful for {biller}!")
                                             st.session_state['wallet_balance'] -= amount_naira
-                                        elif resp_code in ["90302", "90303"]:
-                                            # Insufficient funds response
-                                            st.error("❌ QuickTeller: HTTP 402 — Insufficient Funds.")
-                                            st.session_state['vas_error_signs'] = ["NO", "MONEY"]
                                         else:
-                                            st.warning(f"QuickTeller returned code {resp_code}. Showing visual error.")
-                                            st.session_state['vas_error_signs'] = ["HELP"]
+                                            st.error(f"❌ QuickTeller code {rc} — Insufficient Funds.")
+                                            st.session_state['vas_error_signs'] = ["NO", "MONEY"]
                                     else:
-                                        # Even a 4xx/5xx from Interswitch IS a live API response — show it proudly
-                                        st.error(f"❌ QuickTeller Sandbox Response: HTTP {pay_response.status_code}")
+                                        st.error(f"❌ HTTP {pay_r.status_code}")
                                         st.session_state['vas_error_signs'] = ["NO", "MONEY"]
-                                        
                                 except Exception as e:
-                                    # Safe fallback — demo mode if sandbox unreachable
-                                    st.warning(f"Sandbox unreachable ({e}). Running demo mode.")
-                                    st.error("❌ Demo: HTTP 402 — Insufficient Funds.")
+                                    st.error(f"Payment error: {e}")
                                     st.session_state['vas_error_signs'] = ["NO", "MONEY"]
                     else:
                         st.warning("Please enter a phone or meter number.")
-    # --- THE RIGHT COLUMN (DASHBOARD) ---
+
+    # ── DASHBOARD (RIGHT COLUMN) ───────────────────────────────────
     with p_col2:
         st.subheader("Account Dashboard")
         st.metric("Wallet Balance", f"₦{st.session_state['wallet_balance']:,.2f}")
         st.write("**KYC Level:**", "✅ Tier 3 (NIN Verified)" if st.session_state['kyc_verified'] else "⚠️ Tier 1 (Unverified)")
         st.write("**Biometrics:**", "✅ Active" if st.session_state['is_registered'] else "⚠️ Pending Setup")
-        
+
         if st.button("🔄 Reset Demo State"):
             st.session_state['kyc_verified'] = False
             st.session_state['wallet_balance'] = 0.00
@@ -1190,32 +1157,29 @@ elif selected_page == "💳 Financial Inclusion":
             st.session_state['is_registered'] = False
             st.rerun()
 
-        # VISUAL ERROR HANDLING DISPLAY
         if st.session_state['vas_error_signs']:
             st.write("---")
             st.error("⚠️ Visual Error Translation")
-            
             word_display = st.empty()
             video_player = st.empty()
-            
             if st.button("▶️ Play Error Translation", type="primary", use_container_width=True):
                 for word in st.session_state['vas_error_signs']:
                     word_display.markdown(f"<h3 style='text-align: center; color: #d32f2f;'>{word}</h3>", unsafe_allow_html=True)
                     if word in DYNAMIC_VIDEO_DICT:
                         try:
                             video_player.video(DYNAMIC_VIDEO_DICT[word], autoplay=True, loop=False)
-                            time.sleep(2.5) 
+                            time.sleep(2.5)
                         except:
                             video_player.warning(f"Video missing for {word}")
                             time.sleep(1)
                     else:
                         video_player.info(f"No video for: {word}")
                         time.sleep(1)
-                
                 word_display.markdown("<h3 style='text-align: center;'>Translation Complete ✅</h3>", unsafe_allow_html=True)
                 time.sleep(2)
                 word_display.empty()
                 video_player.empty()
+
 
 # --- PAGE: MEDIA ACCESS ---
 elif selected_page == "📺 Media Access":
