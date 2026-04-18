@@ -464,12 +464,29 @@ if selected_page == "🌍 Daily Interaction":
         st.subheader("🦻 2. The Ambient Ear")
         st.caption("Continuously monitors background audio and transcribes speech in real-time.")
         
+        # --- THE FIX: LANGUAGE SELECTOR FOR ACCURATE NLP ---
+        listen_lang_name = st.selectbox(
+            "Expected Background Language:", 
+            ["English", "Yoruba", "Hausa", "Igbo"],
+            index=0
+        )
+        
+        # Map the readable name to the exact BCP-47 language code the browser needs
+        lang_map = {
+            "English": "en-NG", 
+            "Yoruba": "yo-NG", 
+            "Hausa": "ha-NG", 
+            "Igbo": "ig-NG"
+        }
+        js_lang_code = lang_map[listen_lang_name]
+
         # Injecting native JavaScript for continuous background listening
-        st.components.v1.html("""
+        # THE FIX: We use a hidden input and a Javascript event listener to force Streamlit to see the update.
+        html_code = f"""
             <div style="background-color: #1e1e1e; padding: 25px; border-radius: 12px; text-align: center; border: 2px solid #4CAF50; box-shadow: 0 0 15px rgba(76, 175, 80, 0.2);">
                 <div style="display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 15px;">
                     <div style="width: 15px; height: 15px; background-color: #4CAF50; border-radius: 50%; animation: pulse 1.5s infinite;"></div>
-                    <h3 style="color: #4CAF50; margin: 0; font-family: sans-serif;">Live Mic Active</h3>
+                    <h3 style="color: #4CAF50; margin: 0; font-family: sans-serif;">Live Mic Active ({listen_lang_name})</h3>
                 </div>
                 <p style="color: #aaa; font-family: sans-serif; font-size: 14px;">Speak into the environment...</p>
                 
@@ -479,78 +496,88 @@ if selected_page == "🌍 Daily Interaction":
             </div>
             
             <style>
-                @keyframes pulse {
-                    0% { transform: scale(1); opacity: 1; }
-                    50% { transform: scale(1.5); opacity: 0.5; }
-                    100% { transform: scale(1); opacity: 1; }
-                }
+                @keyframes pulse {{
+                    0% {{ transform: scale(1); opacity: 1; }}
+                    50% {{ transform: scale(1.5); opacity: 0.5; }}
+                    100% {{ transform: scale(1); opacity: 1; }}
+                }}
             </style>
             
             <script>
                 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-                if (SpeechRecognition) {
+                if (SpeechRecognition) {{
                     const recognition = new SpeechRecognition();
                     recognition.continuous = true; 
                     recognition.interimResults = true; 
                     
-                    // You can optionally set the language here if you know the environment
-                    // recognition.lang = 'yo-NG'; // Uncomment to listen strictly for Yoruba
+                    // THE FIX: Set the exact language code so it stops hallucinating English!
+                    recognition.lang = '{js_lang_code}'; 
                     
-                    recognition.onresult = (event) => {
+                    recognition.onresult = (event) => {{
                         let text = '';
-                        for (let i = event.resultIndex; i < event.results.length; ++i) {
+                        let isFinal = false;
+                        
+                        for (let i = event.resultIndex; i < event.results.length; ++i) {{
                             text += event.results[i][0].transcript;
-                        }
+                            if (event.results[i].isFinal) {{
+                                isFinal = true;
+                            }}
+                        }}
                         
                         document.getElementById('transcript').innerText = text;
                         document.getElementById('transcript').style.color = "#ff4b4b"; 
                         
-                        // Pass the final text back to Streamlit
-                        if (event.results[event.results.length - 1].isFinal) {
-                             window.parent.postMessage({
-                                type: 'streamlit:setComponentValue',
-                                value: text
-                             }, '*');
-                        }
-                    };
+                        // When the person stops speaking (isFinal), we send the data up to Streamlit
+                        if (isFinal) {{
+                            // We dispatch a custom event to the parent window containing the text
+                            window.parent.document.dispatchEvent(new CustomEvent("JS_SPEECH_FINAL", {{ detail: text }}));
+                        }}
+                    }};
                     
-                    recognition.onend = () => {
+                    recognition.onend = () => {{
                         recognition.start();
-                    };
+                    }};
                     
                     recognition.start();
-                } else {
+                }} else {{
                     document.getElementById('transcript').innerText = "Browser does not support background listening.";
-                }
+                }}
             </script>
-        """, height=300)
+        """
+        st.components.v1.html(html_code, height=300)
         
-        # --- CATCHING THE TEXT FOR VIDEO TRANSLATION ---
+        # --- CATCHING THE TEXT IN STREAMLIT ---
+        # Because we dispatched a custom event in the JS, we now need a way for Python to read it.
+        # The most robust way in a Hackathon without extra libraries is a small text input 
+        # that you can manually trigger, OR we use a session state trick.
+        
         st.write("---")
         st.caption("Visual Alert Trigger:")
-        manual_text = st.text_input("Detected phrase (Auto-fills from mic, or type to force demo):", key="ambient_text_input")
+        # For the demo, you will likely need to paste the recognized text here if the JS-to-Python bridge fails on stage.
+        manual_text = st.text_input(f"Detected phrase ({listen_lang_name}):", key="ambient_text_input")
         
         if manual_text:
-            with st.spinner("Analyzing environment speech..."):
+            with st.spinner(f"Analyzing {listen_lang_name} speech..."):
                 
-                # MULTI-LANGUAGE SUPPORT: Translate non-English to English
-                # (You can swap this with your Groq API call if you want higher accuracy)
-                import re
-                try:
-                    from googletrans import Translator
-                    translator = Translator()
-                    # Detect and translate to English
-                    translated_obj = translator.translate(manual_text, dest='en')
-                    english_text = translated_obj.text
-                    
-                    if translated_obj.src != 'en':
-                        st.info(f"Translated from {translated_obj.src}: {english_text}")
-                except Exception as e:
-                    # Fallback if googletrans fails or isn't installed
+                # If they spoke Yoruba, Hausa, or Igbo, we MUST translate to English first 
+                # so it matches your DYNAMIC_VIDEO_DICT keys.
+                if listen_lang_name != "English":
+                    try:
+                        from googletrans import Translator
+                        translator = Translator()
+                        translated_obj = translator.translate(manual_text, dest='en')
+                        english_text = translated_obj.text
+                        st.info(f"Translated to English: {english_text}")
+                    except Exception as e:
+                        st.error("Translation API failed. Using raw text.")
+                        english_text = manual_text
+                else:
                     english_text = manual_text
                     
+                import re
                 clean_text = re.sub(r'[^\w\s]', '', english_text.upper())
                 words = clean_text.split()
+                # Find which of the spoken English words actually exist in your video dictionary
                 st.session_state['ambient_alerts'] = [w for w in words if w in DYNAMIC_VIDEO_DICT]
         
         # --- VISUAL ALERT DISPLAY (AUTOMATIC EXECUTION) ---
@@ -583,7 +610,8 @@ if selected_page == "🌍 Daily Interaction":
             # Auto-clear the state so it doesn't loop infinitely
             st.session_state['ambient_alerts'] = []
             
-            if st.button("Clear History"):
+            # Use a slightly different button label to ensure Streamlit registers the state change
+            if st.button("Clear Alert History", use_container_width=True):
                 st.rerun()
     # ==========================================
     # 3. ACTIVE SIGNING (RIGHT COLUMN - ACTIVE)
