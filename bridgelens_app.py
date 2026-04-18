@@ -493,6 +493,9 @@ if selected_page == "🌍 Daily Interaction":
                     recognition.continuous = true; 
                     recognition.interimResults = true; 
                     
+                    // You can optionally set the language here if you know the environment
+                    // recognition.lang = 'yo-NG'; // Uncomment to listen strictly for Yoruba
+                    
                     recognition.onresult = (event) => {
                         let text = '';
                         for (let i = event.resultIndex; i < event.results.length; ++i) {
@@ -502,8 +505,7 @@ if selected_page == "🌍 Daily Interaction":
                         document.getElementById('transcript').innerText = text;
                         document.getElementById('transcript').style.color = "#ff4b4b"; 
                         
-                        // Pass the final text back to Streamlit by updating the parent window's URL parameters
-                        // This allows Streamlit to catch the text and play the corresponding videos
+                        // Pass the final text back to Streamlit
                         if (event.results[event.results.length - 1].isFinal) {
                              window.parent.postMessage({
                                 type: 'streamlit:setComponentValue',
@@ -524,47 +526,64 @@ if selected_page == "🌍 Daily Interaction":
         """, height=300)
         
         # --- CATCHING THE TEXT FOR VIDEO TRANSLATION ---
-        # For Hackathon Demo purposes, we include a manual text override just in case 
-        # the conference hall is too noisy for the browser mic to pick up your voice clearly.
         st.write("---")
         st.caption("Visual Alert Trigger:")
         manual_text = st.text_input("Detected phrase (Auto-fills from mic, or type to force demo):", key="ambient_text_input")
         
         if manual_text:
-            import re
-            clean_text = re.sub(r'[^\w\s]', '', manual_text.upper())
-            words = clean_text.split()
-            st.session_state['ambient_alerts'] = [w for w in words if w in DYNAMIC_VIDEO_DICT]
+            with st.spinner("Analyzing environment speech..."):
+                
+                # MULTI-LANGUAGE SUPPORT: Translate non-English to English
+                # (You can swap this with your Groq API call if you want higher accuracy)
+                import re
+                try:
+                    from googletrans import Translator
+                    translator = Translator()
+                    # Detect and translate to English
+                    translated_obj = translator.translate(manual_text, dest='en')
+                    english_text = translated_obj.text
+                    
+                    if translated_obj.src != 'en':
+                        st.info(f"Translated from {translated_obj.src}: {english_text}")
+                except Exception as e:
+                    # Fallback if googletrans fails or isn't installed
+                    english_text = manual_text
+                    
+                clean_text = re.sub(r'[^\w\s]', '', english_text.upper())
+                words = clean_text.split()
+                st.session_state['ambient_alerts'] = [w for w in words if w in DYNAMIC_VIDEO_DICT]
         
-        # --- VISUAL ALERT DISPLAY (Sequential & Large) ---
-        if st.session_state['ambient_alerts']:
-            st.write(f"**Alert Sequence:** {' ➡️ '.join(st.session_state['ambient_alerts'])}")
+        # --- VISUAL ALERT DISPLAY (AUTOMATIC EXECUTION) ---
+        if st.session_state.get('ambient_alerts'):
+            st.error(f"**Alert Sequence:** {' ➡️ '.join(st.session_state['ambient_alerts'])}")
             st.divider()
             
             word_display = st.empty()
             video_player = st.empty()
             
-            if st.button("▶️ Play Alert Sequence", type="primary", use_container_width=True):
-                for word in st.session_state['ambient_alerts']:
-                    word_display.markdown(f"<h3 style='text-align: center; color: #4CAF50;'>{word}</h3>", unsafe_allow_html=True)
-                    if word in DYNAMIC_VIDEO_DICT:
-                        try:
-                            video_player.video(DYNAMIC_VIDEO_DICT[word], autoplay=True, loop=False)
-                            time.sleep(3.5) 
-                        except:
-                            video_player.warning("Video missing")
-                            time.sleep(1)
-                    else:
-                        video_player.info(f"No video for: {word}")
+            # AUTOMATICALLY loop through the videos
+            for word in st.session_state['ambient_alerts']:
+                word_display.markdown(f"<h3 style='text-align: center; color: #4CAF50;'>{word}</h3>", unsafe_allow_html=True)
+                if word in DYNAMIC_VIDEO_DICT:
+                    try:
+                        video_player.video(DYNAMIC_VIDEO_DICT[word], autoplay=True, loop=False)
+                        time.sleep(3.5) 
+                    except:
+                        video_player.warning("Video missing")
                         time.sleep(1)
-                
-                word_display.markdown("<h3 style='text-align: center;'>Alert Complete ✅</h3>", unsafe_allow_html=True)
-                time.sleep(1.5)
-                word_display.empty()
-                video_player.empty()
-                
-            if st.button("Clear Alerts"):
-                st.session_state['ambient_alerts'] = []
+                else:
+                    video_player.info(f"No video for: {word}")
+                    time.sleep(1)
+            
+            word_display.markdown("<h3 style='text-align: center;'>Alert Complete ✅</h3>", unsafe_allow_html=True)
+            time.sleep(1.5)
+            word_display.empty()
+            video_player.empty()
+            
+            # Auto-clear the state so it doesn't loop infinitely
+            st.session_state['ambient_alerts'] = []
+            
+            if st.button("Clear History"):
                 st.rerun()
     # ==========================================
     # 3. ACTIVE SIGNING (RIGHT COLUMN - ACTIVE)
