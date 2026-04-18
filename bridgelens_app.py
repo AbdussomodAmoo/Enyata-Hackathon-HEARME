@@ -216,6 +216,7 @@ def translate_local_to_gloss(spoken_text, target_lang, api_key):
                         f"If the phrase closely matches an example, use that exact output. "
                         f"Reference examples: {examples.get(target_lang, 'hello → HELLO')}"
                     )
+                },
                 {
                     "role": "user", 
                     "content": spoken_text  # Just send the raw phrase, no instructions
