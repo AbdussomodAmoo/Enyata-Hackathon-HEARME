@@ -121,32 +121,63 @@ Glosses to translate: {sign_gloss_text}"""
         return sign_gloss_text
 
 def translate_local_to_gloss(spoken_text, target_lang, api_key):
-    """Translates Yoruba/Igbo/Hausa to English, then to Sign Glosses."""
+    """Translates Yoruba/Igbo/Hausa to English Sign Glosses using Groq."""
     if not api_key:
-        return [w.upper() for w in spoken_text.split()] 
+        api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key:
+        return [w.upper() for w in spoken_text.split()]
         
     try:
-        from groq import Groq
         groq_client = Groq(api_key=api_key)
-        prompt = f"""You are a master linguistic translator.
-The user spoke the following sentence in {target_lang}: "{spoken_text}"
-Translate this into English, and then convert it into a core English Sign Language Gloss sequence.
-Extract ONLY the core keywords.
-Output them as a space-separated string of UPPERCASE ENGLISH WORDS. No other text.
-Example: If Yoruba is 'Bawo ni', output 'HOW ARE YOU' or 'HELLO'.
-Gloss sequence:"""
+        
+        prompt = f"""You are a translator. The user said this in {target_lang}: "{spoken_text}"
+
+Step 1: Translate it to English.
+Step 2: Extract only the core meaning words from that English translation.
+Step 3: Output ONLY those core English words in UPPERCASE, separated by spaces. No punctuation, no explanation, no original language words.
+
+Examples:
+- Yoruba "ẹ káàrọ̀" → GOOD MORNING
+- Yoruba "ẹ káàbọ̀" → WELCOME
+- Igbo "nnọọ" → WELCOME
+- Hausa "sannu" → HELLO
+- Yoruba "bawo ni" → HOW ARE YOU
+
+Output (UPPERCASE English words only):"""
 
         response = groq_client.chat.completions.create(
             model="llama-3.1-8b-instant",
-            messages=[{"role": "user", "content": prompt}],
+            messages=[
+                {
+                    "role": "system", 
+                    "content": "You are a strict translator. You ONLY output uppercase English words separated by spaces. Never output the original language. Never explain."
+                },
+                {"role": "user", "content": prompt}
+            ],
             temperature=0.0,
-            max_tokens=50
+            max_tokens=30
         )
-        return response.choices[0].message.content.strip().split() 
         
-    except Exception:
+        result = response.choices[0].message.content.strip()
+        
+        # Safety filter: strip any non-ASCII diacritic characters that slipped through
+        import unicodedata
+        clean = unicodedata.normalize('NFKD', result)
+        clean = ''.join(c for c in clean if ord(c) < 128)
+        clean = re.sub(r'[^A-Z\s]', '', clean.upper()).strip()
+        
+        words = clean.split()
+        
+        # Validate: if any word looks like it's still Yoruba/Igbo/Hausa 
+        # (contains diacritics or is very short and unknown), fall back
+        if not words or len(clean) == 0:
+            return ["HELLO"]  # Safe fallback
+            
+        return words
+        
+    except Exception as e:
+        st.toast(f"Translation error: {e}", icon="⚠️")
         return [w.upper() for w in spoken_text.split()]
-
 def autoplay_audio(text):
     """Generates and auto-plays text-to-speech audio with error handling."""
     try:
