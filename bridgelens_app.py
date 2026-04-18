@@ -539,37 +539,33 @@ if selected_page == "🌍 Daily Interaction":
         manual_text = st.text_input("Detected phrase (Auto-fills from mic, or type to force demo):", value=detected_text if detected_text else "")
         
         if manual_text:
-            # IMMEDIATELY clear the URL parameter so it doesn't loop infinitely on the next rerun
-            st.query_params.clear()
-            
+            # Clear immediately to prevent re-triggering on rerun
             with st.spinner(f"Analyzing {listen_lang_name} speech..."):
-                english_text = manual_text
                 
-                # If they spoke an indigenous language, use Groq (Llama-3) to translate to English first
                 if listen_lang_name != "English":
-                    try:
-                        from groq import Groq
-                        import os
-                        client = Groq(api_key=st.secrets.get("GROQ_API_KEY") or os.environ.get("GROQ_API_KEY"))
-                        
-                        prompt = f"Translate the following {listen_lang_name} phrase directly into English. Provide ONLY the translated English sentence, nothing else. Phrase: '{manual_text}'"
-                        
-                        chat_completion = client.chat.completions.create(
-                            messages=[{"role": "user", "content": prompt}],
-                            model="llama3-8b-8192", 
-                            temperature=0.2, 
-                        )
-                        english_text = chat_completion.choices[0].message.content.strip()
-                        st.info(f"Translated to English: {english_text}")
-                        
-                    except Exception as e:
-                        st.error(f"Groq Translation Error: {e}")
-                        
-                import re
-                clean_text = re.sub(r'[^\w\s]', '', english_text.upper())
-                words = clean_text.split()
-                st.session_state['ambient_alerts'] = [w for w in words if w in DYNAMIC_VIDEO_DICT]
-        
+                    # USE GROQ (already working) instead of broken googletrans
+                    glosses = translate_local_to_gloss(
+                        spoken_text=manual_text,
+                        target_lang=listen_lang_name,
+                        api_key=groq_api_key  # Already captured from sidebar
+                    )
+                    english_text = " ".join(glosses)  # For display
+                    st.info(f"🌍 Translated Glosses: {english_text}")
+                else:
+                    english_text = manual_text
+                    glosses = None
+
+                # USE extract_target_glosses() — handles plurals/tenses, matches your video dict
+                matched = extract_target_glosses(english_text)
+                
+                if matched:
+                    st.session_state['ambient_alerts'] = matched
+                elif glosses:
+                    # Fallback: use raw glosses from Groq if extract found nothing
+                    st.session_state['ambient_alerts'] = [g for g in glosses if g in DYNAMIC_VIDEO_DICT]
+                else:
+                    st.session_state['ambient_alerts'] = []
+                    st.warning("No matching sign videos found for those words.")        
         # --- VISUAL ALERT DISPLAY (AUTOMATIC EXECUTION) ---
         if st.session_state.get('ambient_alerts'):
             st.error(f"**Alert Sequence:** {' ➡️ '.join(st.session_state['ambient_alerts'])}")
